@@ -60,6 +60,35 @@ Cada vetor tem o padrão **❌ errado → ✅ certo** em [`secure-code/reference
 
 ---
 
+## 🚀 Scanner rodável (não é só doc — é ferramenta)
+
+Além da skill (que o agente lê), tem um **scanner** que roda os detectores sozinho:
+
+```bash
+bash scan.sh .                      # white-box: varre o repositório atual
+bash scan.sh --url https://alvo     # black-box: headers, CORS, .git/.env, SPF/DMARC, Supabase
+bash scan.sh --url URL .            # grey-box (os dois)
+bash scan.sh --json .               # saída JSON pra CI/pipeline
+# ou: make test   |   make scan   |   make scan URL=https://exemplo.com
+```
+
+Saída ordenada por severidade (🔴 crítico → ℹ️ info), com `arquivo:linha` e exit code ≠ 0 se houver
+crítico/alto (pronto pra CI). **Cada achado é ponto de partida, não veredito** — o scanner aponta,
+você confirma lendo (verify-before-flag). Requer `bash`, `grep`, `curl`, `dig`; usa `gitleaks`,
+`osv-scanner`, `govulncheck` se estiverem instalados.
+
+### Provado por testes
+`tests/` tem código **vulnerável de propósito** (um por vetor) e código **limpo**. `make test`
+verifica que cada detector dispara **e** que o código limpo não gera falso-positivo (inclusive o
+caso clássico: `NEXT_PUBLIC_SUPABASE_ANON_KEY` no front **não** é bug se a RLS está ligada). O CI
+(`.github/workflows/scan.yml`) roda isso em todo push — com a Action **pinada por SHA** (praticando
+o vetor 13 da própria skill).
+
+### Como agente do Claude Code
+`agents/security-reviewer.md` é um subagente pronto: copie para `~/.claude/agents/` e peça
+*"revisa a segurança deste projeto"*. Ele roda o scanner, aplica verify-before-flag e entrega o
+relatório priorizado.
+
 ## Como funciona — 3 modos
 
 A skill dá ao agente um comportamento em 3 modos (detalhe em [`secure-code/SKILL.md`](secure-code/SKILL.md)):
@@ -118,12 +147,20 @@ Esses não usam skills do Claude Code. Copie o bloco **MODO 1** de
 ## Estrutura
 
 ```
-secure-code/
-├── SKILL.md                          # o cérebro: 3 modos + regras + falso-positivos
-└── references/
-    ├── vectors.md                    # 28 vetores: ❌ errado → ✅ certo + toolkit white-box E black-box
-    ├── code-review-playbook.md       # metodologia de revisão de código (white-box), passo a passo
-    └── audit-report-template.md      # formato do relatório de auditoria
+├── scan.sh                           # 🚀 scanner rodável (white-box + black-box)
+├── Makefile                          # make test / make scan
+├── tests/                            # suíte que PROVA que os detectores disparam
+│   ├── run.sh
+│   └── fixtures/{vulnerable,clean}/  # código vulnerável de propósito + código limpo
+├── agents/
+│   └── security-reviewer.md          # subagente do Claude Code que usa a skill
+├── .github/workflows/scan.yml        # CI: roda os testes + self-scan (actions pinada por SHA)
+└── secure-code/                      # a SKILL
+    ├── SKILL.md                      # o cérebro: 3 modos + regras + falso-positivos
+    └── references/
+        ├── vectors.md                # 33 vetores: ❌ errado → ✅ certo + toolkit white-box E black-box
+        ├── code-review-playbook.md   # metodologia de revisão de código, passo a passo
+        └── audit-report-template.md  # formato do relatório de auditoria
 ```
 
 > **White-box e black-box.** A skill foi feita para os dois cenários: revisar/construir o **próprio

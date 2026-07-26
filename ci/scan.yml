@@ -1,0 +1,20 @@
+# Copie para .github/workflows/scan.yml (requer token com escopo 'workflow' pra commitar isso).
+name: secure-code
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      # pinada por SHA (dogfooding: vetor 13 / CI supply chain)
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Testes do scanner (detectores + falso-positivo)
+        run: bash tests/run.sh
+      - name: Self-scan do repositório
+        run: bash scan.sh . || true   # não quebra o build do próprio repo (só relatório)
