@@ -45,7 +45,7 @@ hardcoded_secret_check() {
         local loc="${hit%%:*}"; local rest="${hit#*:}"; local ln="${rest%%:*}"; local content="${rest#*:}"
         # pula comentário (código morto), env, import, placeholder e exemplo
         echo "$content" | grep -qE '^[[:space:]]*(//|--|\*|#|/\*)' && continue
-        echo "$content" | grep -qiE 'process\.env|getenv|os\.environ|import |require\(|your_|example|placeholder|xxxx|\*\*\*|\$\{|<[a-z]+>' && continue
+        echo "$content" | grep -qiE 'process\.env|getenv|os\.environ|import |require\(|your_|example|placeholder|xxxx|\*\*\*|\$\{|<[a-z]+>|\$2[aby]\$|\$argon2|\$scrypt' && continue
         finding CRITICAL SECRETS-HARDCODED "$loc:$ln" "segredo/senha hardcoded em literal — mover para variável de ambiente"
       done
 }
