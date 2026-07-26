@@ -36,7 +36,10 @@ que a imprensa de segurança vem reportando sobre apps gerados por IA / vibe-cod
 
 ---
 
-## O que a skill cobre (28 vetores)
+## O que a skill cobre (33 vetores)
+
+> Sempre começa por **contexto + stack + versões** (deps desatualizadas, versões com CVE conhecida,
+> runtime EOL) antes de aplicar qualquer regra — regra na stack errada é ruído.
 
 Segredos expostos · RLS ausente/quebrada (Supabase) · IDOR/BOLA · confiar no cliente (preço/role) ·
 webhook sem verificação · token em localStorage · XSS · SQL/command injection · headers de
@@ -46,7 +49,9 @@ sem SRI, dependency confusion) · auth e reset de senha fracos · erros verbosos
 prompt injection · **subdomain takeover** · **JWT alg confusion / none / secret fraco** · **race
 condition / TOCTOU** · `.git`/`.env`/source maps/Swagger expostos · open redirect / OAuth · path
 traversal / SSTI · GraphQL · **SPF/DKIM/DMARC** · sessão insegura · object storage público ·
-logging & monitoramento · validação server-side.
+logging & monitoramento · validação server-side · **cache poisoning (CDN/edge)** · **excessive data
+exposure / over-fetching** · **WebSocket inseguro** · **PII → LLM de terceiro** · **query sem limite
+(data dump/DoS)** · **versões vulneráveis / runtime EOL**.
 
 **Multi-linguagem:** os detectores (grep por vetor) cobrem **JS/TS, Go, Python e PHP** — o toolkit
 white-box traz o padrão equivalente em cada stack.

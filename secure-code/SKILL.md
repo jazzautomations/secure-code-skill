@@ -62,6 +62,12 @@ pra ser seguro — seja seguro por padrão.
     `FOR UPDATE` ou constraint) — nunca read-then-write (race condition/TOCTOU).
 15. **Redirect/OAuth:** redirect e `redirect_uri` por match exato (sem wildcard/prefixo/URL crua).
 16. **Validação server-side** de TODO input com schema (zod/pydantic). Front é UX, não segurança.
+17. **Resposta/cache/volume:** devolva só os campos necessários (nunca modelo cru com hash/PII →
+    over-fetching); rota autenticada com `Cache-Control: private, no-store` (nunca cachear dado de
+    usuário em CDN/edge); listagem com `limit`/paginação forçados no servidor.
+18. **Versões/deps:** use versões suportadas e sem CVE conhecida (audit/govulncheck/osv); nada de
+    runtime EOL. WebSocket: autentique no handshake + cheque Origin. Não mande PII pro LLM sem
+    minimizar/consentir.
 
 Para o exemplo `errado → certo` de qualquer item, abra `references/vectors.md` no vetor
 correspondente.
@@ -76,8 +82,11 @@ Você quase sempre **TEM o código** (está construindo ou revisando o próprio 
 **DETECTAR → VERIFICAR → REPORTAR**. Nunca reporte por "parece"; confirme.
 
 ### 2A · WHITE-BOX (você tem o código) — track principal
-1. **Mapeie a stack** lendo `package.json`/`requirements.txt`, config de deploy, migrations e a
-   estrutura de pastas (onde ficam rotas, auth, camada de dados).
+1. **CONTEXTO / STACK / VERSÕES primeiro (obrigatório, antes de aplicar qualquer regra):** entenda
+   o que o projeto FAZ, a stack (framework, banco, auth, deploy) e as **versões** — deps
+   desatualizadas, **versões vulneráveis** (audit/`govulncheck`/`osv-scanner`) e **runtime EOL**
+   (Node/Python/PHP fora de suporte). Regra aplicada na stack errada = ruído. Ver "Passo 0" no
+   toolkit white-box e em `code-review-playbook.md`.
 2. **Rode o TOOLKIT WHITE-BOX** (grep por vetor em `references/vectors.md`): segredos hardcoded,
    `NEXT_PUBLIC_` sensível, RLS nas migrations, `service_role` no client, IDOR, `req.body` em
    preço/role, webhook sem verificação, token em localStorage, `dangerouslySetInnerHTML`, SQL

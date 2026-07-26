@@ -10,9 +10,14 @@ confirma lendo o arquivo.
 
 ---
 
-## Passo 0 — Mapa do terreno (5 min)
-Antes de caçar bug, entenda o projeto:
+## Passo 0 — Contexto, stack e versões (SEMPRE PRIMEIRO)
+Antes de caçar bug, entenda o projeto — regra aplicada na stack errada é ruído:
+- **O que o projeto FAZ** e quem usa (define o que é dado sensível e o modelo de ameaça).
 - **Stack:** leia `package.json`/`requirements.txt`/`go.mod` — framework, ORM, libs de auth/pagamento.
+- **Versões (crítico):** deps desatualizadas, **versões com CVE conhecida** e **runtime EOL** (Node/
+  Python/PHP sem suporte). Rode `npm audit`/`npm outdated`, `pip-audit`, `govulncheck ./...`,
+  `osv-scanner -r .`. Cheque runtime no endoflife.date. Versão vulnerável de framework/lib é bug
+  por si só (às vezes o mais grave e o mais fácil de corrigir: subir a versão).
 - **Deploy & env:** `vercel.json`/`netlify.toml`/`Dockerfile`, `.env.example`, `next.config.js`.
 - **Estrutura:** onde ficam as **rotas/endpoints**, a **camada de dados** (queries/ORM/migrations)
   e o **código de auth**. Esses três são 80% da superfície de ataque.

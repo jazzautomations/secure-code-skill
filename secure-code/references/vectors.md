@@ -1,6 +1,6 @@
 # Vetores — referência errado→certo + toolkit
 
-Referência condensada dos 28 vetores para o agente consultar no ponto de uso. Cada item traz o
+Referência condensada dos 33 vetores para o agente consultar no ponto de uso. Cada item traz o
 padrão inseguro (❌) e o seguro (✅). Contexto e casos reais que motivam cada vetor estão no
 `README.md` do repositório.
 
@@ -128,6 +128,26 @@ Superfície inteira do "código que não é seu mas roda no seu contexto":
 ## 28. Validação server-side
 ✅ schema (zod/pydantic/joi) em TODO input no servidor: tipo, tamanho, range, enum allowlist, rejeitar campos extras.
 
+## 29. Cache poisoning / cache de resposta autenticada (CDN/edge)
+❌ Rota com dado de usuário sem `Cache-Control` privado → CDN/Vercel cacheia a resposta de UM usuário e serve pra OUTRO. Ou ISR/`revalidate` em dado privado.
+✅ Resposta com dado de sessão: `Cache-Control: private, no-store`. Next: rota/handler autenticado como dynamic (`export const dynamic = 'force-dynamic'`), nunca cache/ISR em dado privado. `Vary` correto quando varia por header.
+
+## 30. Excessive data exposure / over-fetching (OWASP API #3)
+❌ `select('*')` no Supabase ou struct Go/JSON serializando campos internos (`password_hash`, `is_admin`, tokens, PII) que o front "não mostra" mas trafega no payload.
+✅ Selecionar só os campos necessários; DTO/allowlist de saída (nunca o modelo cru). Go: `json:"-"` em campos sensíveis. Supabase: `select('id,name')` + RLS/coluna. Confira o JSON REAL da resposta, não a tela.
+
+## 31. WebSocket inseguro
+❌ Upgrade de WS sem autenticar, sem checar `Origin`, sem limite → hijack, CSWSH (cross-site WS hijacking), flood.
+✅ Autenticar no handshake (valida token ANTES do upgrade); validar `Origin` contra allowlist; rate limit por conexão + timeout + tamanho máx de mensagem.
+
+## 32. PII / dado sensível indo pro LLM de terceiro
+❌ Mandar dado de usuário (nome, e-mail, doc, saúde, financeiro) pro OpenAI/Anthropic/Groq sem consentimento/minimização; logar prompt/resposta com PII; sem controle de retenção/residência.
+✅ Minimizar/redigir PII antes de enviar; consentimento + política; preferir endpoints com retenção-zero/no-training; não logar prompt com PII; ter DPA do provedor.
+
+## 33. Query sem limite / paginação (data dump + DoS)
+❌ Listagem sem `limit`/paginação → dumpa a tabela inteira ou trava o banco; ordenação/filtro arbitrário vindo do cliente.
+✅ `limit` máximo forçado no servidor + paginação (cursor/offset); teto de page size; allowlist de campos de ordenação/filtro.
+
 ---
 
 # 🔍 TOOLKIT BLACK-BOX (alvo no ar)
@@ -187,6 +207,18 @@ Rode na raiz do repositório. **Cada hit é um PONTO DE PARTIDA, não um veredit
 e leia a lógica antes de reportar (regra verify-before-flag). Ajuste `--include` à linguagem.
 
 ```bash
+# 0. CONTEXTO / STACK / VERSÕES  ← SEMPRE PRIMEIRO (antes de aplicar qualquer regra)
+#    Descubra o que é o projeto, qual stack, e se as versões estão vulneráveis/EOL.
+cat package.json requirements.txt go.mod Gemfile composer.json pom.xml 2>/dev/null | head -60
+cat README* .env.example vercel.json netlify.toml Dockerfile 2>/dev/null | head -40
+# Versões desatualizadas / vulneráveis / fim-de-vida (EOL):
+npm outdated 2>/dev/null; npm audit 2>/dev/null | tail -20      # Node
+pip list --outdated 2>/dev/null; pip-audit 2>/dev/null          # Python
+go list -m -u all 2>/dev/null | grep '\['; govulncheck ./... 2>/dev/null  # Go (CVE reais no código)
+osv-scanner -r . 2>/dev/null                                    # multi-eco: casa versão x CVE
+# Runtime EOL? (ex: Node 16/18 sem suporte, Python 3.7, PHP 7.x). Cheque no endoflife.date.
+grep -rEn "\"node\"|\"engines\"|python_requires|^go [0-9]|FROM (node|python|php|ruby):" . 2>/dev/null | grep -v node_modules
+
 # 1. Segredos hardcoded no código
 grep -rEn "sk_live_|sk_test_|service_role|AKIA[0-9A-Z]{16}|-----BEGIN (RSA|EC|OPENSSH|PRIVATE)|(api[_-]?key|secret|token|password)\s*[:=]\s*['\"][A-Za-z0-9/_+-]{16,}" \
   --include=*.{js,ts,jsx,tsx,py,go,rb,php,env,json,yml,yaml} . | grep -v node_modules
@@ -259,6 +291,18 @@ grep -rEn "uses: .+@v?[0-9]+$|pull_request_target|permissions:|secrets\.[A-Z_]+"
 grep -rEn "\"(pre|post)install\"" package.json 2>/dev/null
 grep -rEn "^FROM .+:latest|^FROM [^@]+$" **/Dockerfile Dockerfile 2>/dev/null
 grep -rEn "<script[^>]*src=[\"']https?://" . | grep -v "integrity=" | grep -v node_modules
+
+# 29. Cache de resposta autenticada (poisoning)
+grep -rEn "Cache-Control|s-maxage|revalidate|force-static|unstable_cache|dynamic =" . | grep -v node_modules
+# 30. Over-fetching / excessive data exposure (confira campos sensíveis no que sai)
+grep -rEn "select\(['\"]\*|SELECT \*|json.Marshal|c.JSON\(|res.json\(" . | grep -v node_modules
+grep -rEn "password|hash|secret|token|cpf|ssn" . | grep -iE "json:|serializ|select|return" | grep -v node_modules
+# 31. WebSocket (auth no upgrade? checa Origin?)
+grep -rEn "websocket|upgrader|CheckOrigin|new WebSocket|socket.io|Upgrade\(" . | grep -v node_modules
+# 32. PII -> LLM de terceiro (o que vai no prompt?)
+grep -rEn "openai|anthropic|groq|chat.completions|generateText|messages:\s*\[" . | grep -v node_modules
+# 33. Query sem limite (data dump / DoS)
+grep -rEn "findMany\(|\.select\(|SELECT .* FROM" . | grep -viE "limit|take|first|top " | grep -v node_modules
 ```
 
 ## 🌐 Multi-linguagem (o grep JS acima → equivalente noutra stack)
