@@ -121,7 +121,7 @@ padrão inseguro (❌) e o seguro (✅). Contexto e casos reais que motivam cada
 
 ---
 
-# 🔍 TOOLKIT DE AUDITORIA (MODO 2)
+# 🔍 TOOLKIT BLACK-BOX (alvo no ar)
 
 ```bash
 # 1. Segredos hardcoded
@@ -153,6 +153,11 @@ curl -s "https://SEU-PROJ.supabase.co/rest/v1/profiles?select=*" \
 # 7. Subdomain takeover / DNS
 subfinder -d DOMINIO | while read s; do echo -n "$s -> "; dig +short CNAME $s; done
 # ou: nuclei -t takeovers/
+# DOMÍNIO PRÓPRIO: não adivinhe por wordlist (wildcard "*" faz tudo resolver e nomes custom
+# escapam). Puxe a lista REAL de deploys: `vercel ls` / `vercel domains ls`, painel Cloudflare,
+# ou o provedor de DNS. Confirme cada host com HTTP: x-vercel-error DEPLOYMENT_NOT_FOUND = wildcard
+# vazio (NÃO é takeover, a Vercel controla o IP), 200 = deploy real.
+# crt.sh (pode ser lento): curl -s "https://crt.sh/?q=%25.DOMINIO&output=json"
 
 # 8. Email auth
 dig +short TXT DOMINIO | grep spf1
@@ -164,3 +169,82 @@ npm audit --production   # ou pip-audit / osv-scanner -r .
 # 10. Scanner de superfície
 nuclei -u https://SEU-HOST
 ```
+
+---
+
+# 🔬 TOOLKIT WHITE-BOX (revisão de código — track principal)
+
+Rode na raiz do repositório. **Cada hit é um PONTO DE PARTIDA, não um veredito** — abra o arquivo
+e leia a lógica antes de reportar (regra verify-before-flag). Ajuste `--include` à linguagem.
+
+```bash
+# 1. Segredos hardcoded no código
+grep -rEn "sk_live_|sk_test_|service_role|AKIA[0-9A-Z]{16}|-----BEGIN (RSA|EC|OPENSSH|PRIVATE)|(api[_-]?key|secret|token|password)\s*[:=]\s*['\"][A-Za-z0-9/_+-]{16,}" \
+  --include=*.{js,ts,jsx,tsx,py,go,rb,php,env,json,yml,yaml} . | grep -v node_modules
+gitleaks detect --source .          # varredura dedicada
+git log -p --all -- .env .env.* | head   # segredo já esteve no histórico?
+test -f .gitignore && grep -q "^\.env" .gitignore || echo "⚠️ .env NÃO está no .gitignore"
+
+# 1b. Segredo com prefixo público (vaza no bundle do browser)
+grep -rEn "(NEXT_PUBLIC_|VITE_|REACT_APP_|EXPO_PUBLIC_)[A-Z_]*(SECRET|SERVICE|PRIVATE|PASSWORD|TOKEN|KEY)" . | grep -v node_modules
+# (SUPABASE_ANON_KEY / URL pública aqui = OK; SERVICE_ROLE aqui = CRÍTICO)
+
+# 2/4. RLS (Supabase) — nas migrations/SQL
+grep -rEn "create table|enable row level security|create policy|using ?\(true\)|with check ?\(true\)" \
+  supabase/ migrations/ **/*.sql 2>/dev/null
+# Liste tabelas SEM 'enable row level security' e policies com using(true). E o pior:
+grep -rEn "service_role|SERVICE_ROLE_KEY|serviceRole" src/ app/ components/ pages/ 2>/dev/null
+# ^ service_role em código de CLIENTE = exposição total do banco (CRÍTICO)
+
+# 3. IDOR/BOLA — queries que usam id da request sem ownership
+grep -rEn "findUnique|findFirst|\.eq\(['\"]id|where.*(params|query)|req\.(params|query|body)\.(id|user_?[Ii]d)" src/ app/ pages/ 2>/dev/null
+# Abra cada rota: ela filtra por dono (session.userId) ou confia no id que veio? Admin checa role no server?
+
+# 4. Confiar no cliente (preço/role/permissão)
+grep -rEn "req\.body\.(amount|price|total|role|is_?[Aa]dmin|isPremium)|unit_amount|price_data|body\.(role|amount|price)" . | grep -v node_modules
+
+# 5. Webhook sem verificação
+grep -rEn "webhook|constructEvent|verifyHeader|createHmac|timingSafeEqual|X-Hub-Signature|stripe-signature" . | grep -v node_modules
+# O handler verifica assinatura do corpo CRU antes de agir? Secret vem de env e não é vazio?
+
+# 6/25. Token/segredo em localStorage + randomness fraco
+grep -rEn "localStorage|sessionStorage" . | grep -iE "token|jwt|auth|session|access" | grep -v node_modules
+grep -rEn "Math\.random" . | grep -iE "token|id|secret|otp|reset|password|nonce|session" | grep -v node_modules
+
+# 7. XSS — saída não sanitizada
+grep -rEn "dangerouslySetInnerHTML|innerHTML|v-html|\.html\(|render_template_string|\|\s*safe" . | grep -v node_modules
+
+# 8/22. Injeção SQL/comando/SSTI/path
+grep -rEn "query\(\`|execute\(f['\"]|\.raw\(|SELECT .*(\+|\$\{)|child_process|exec\(|eval\(|os\.system|subprocess.*shell=True" . | grep -v node_modules
+grep -rEn "readFile.*(req|params|query)|path\.join\(.*(req|params|query)" . | grep -v node_modules   # path traversal
+
+# 9/10. Headers + CORS
+grep -rEn "helmet|Content-Security-Policy|Strict-Transport|X-Frame-Options" . | grep -v node_modules   # ausência = gap
+grep -rEn "origin: ?['\"]\*|origin: ?true|Access-Control-Allow-Origin.*\*|cors\(\)" . | grep -v node_modules
+
+# 11. Rate limit (ausência em auth / IA = gap)
+grep -rEn "rateLimit|express-rate-limit|Ratelimit|upstash/ratelimit|throttle|slow-?down" . | grep -v node_modules
+grep -rEn "max_tokens|maxTokens" . | grep -v node_modules   # endpoint de IA sem teto de tokens?
+
+# 14/16. Reset de senha, hash, JWT
+grep -rEn "reset_?[Tt]oken|forgotPassword|bcrypt|argon2|scrypt|md5|sha1\b" . | grep -v node_modules
+grep -rEn "jwt\.verify|jsonwebtoken|jose|decode\(|algorithms|['\"]none['\"]|HS256|RS256" . | grep -v node_modules
+# jwt.verify tem { algorithms: [...] } explícito? Rejeita none?
+
+# 19. Race condition / TOCTOU (read-then-write em saldo/estoque/cupom)
+grep -rEn "balance|saldo|stock|estoque|quantity|coupon|cupom|credits|créditos" . | grep -iE "update|-=|\+=|- ?amount" | grep -v node_modules
+grep -rEn "FOR UPDATE|\\\$transaction|BEGIN;|SELECT .* FOR|serializable" . | grep -v node_modules   # existe lock/transação?
+
+# 28. Validação server-side (rotas usando req.body sem schema)
+grep -rLEn "zod|yup|joi|pydantic|valibot|class-validator" $(grep -rlE "req\.body" src/ app/ pages/ 2>/dev/null) 2>/dev/null
+
+# 12. Upload / SSRF
+grep -rEn "multer|formidable|busboy|\.upload|fetch\(.*(req|params|query)|axios.*(req\.(body|query|params))" . | grep -v node_modules
+
+# 13. Dependências (slopsquatting / vulneráveis)
+test -f package-lock.json -o -f pnpm-lock.yaml -o -f yarn.lock || echo "⚠️ sem lockfile"
+npm audit || pip-audit || osv-scanner -r .
+```
+
+> **Regra de leitura:** grep dá o *onde*, você dá o *veredito* abrindo o arquivo. Um `Math.random`
+> num gerador de cor não é bug; num gerador de token de reset é CRÍTICO. Sempre leia o contexto.

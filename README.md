@@ -57,7 +57,9 @@ A skill dá ao agente um comportamento em 3 modos (detalhe em [`secure-code/SKIL
 
 1. **PREVENIR** — 16 regras invioláveis que o agente aplica *antes de entregar* qualquer código
    que toque em auth, dados, pagamentos, uploads, env vars, DNS ou chamadas externas.
-2. **DETECTAR** — fluxo `DETECTAR → VERIFICAR → REPORTAR` para auditar um projeto existente, com
+2. **DETECTAR** — fluxo `DETECTAR → VERIFICAR → REPORTAR` em dois tracks: **white-box** (você tem
+   o código — track principal, com grep por vetor + [playbook de revisão](secure-code/references/code-review-playbook.md))
+   e **black-box** (alvo no ar — headers, RLS probe, subdomínios, SPF/DMARC). Com
    **verify-before-flag** (o agente *testa* a falha antes de acusar, reduzindo falso-positivo),
    escala de severidade e [template de relatório](secure-code/references/audit-report-template.md).
 3. **CORRIGIR** — separa o que a IA pode consertar sozinha do que ela **tem que parar e escalar
@@ -110,9 +112,14 @@ Esses não usam skills do Claude Code. Copie o bloco **MODO 1** de
 secure-code/
 ├── SKILL.md                          # o cérebro: 3 modos + regras + falso-positivos
 └── references/
-    ├── vectors.md                    # 28 vetores: ❌ errado → ✅ certo + toolkit de comandos
+    ├── vectors.md                    # 28 vetores: ❌ errado → ✅ certo + toolkit white-box E black-box
+    ├── code-review-playbook.md       # metodologia de revisão de código (white-box), passo a passo
     └── audit-report-template.md      # formato do relatório de auditoria
 ```
+
+> **White-box e black-box.** A skill foi feita para os dois cenários: revisar/construir o **próprio
+> código** (você tem o repo → grep por vetor + playbook de revisão) e auditar um **alvo no ar**
+> (sem código → probing externo). O ideal é combinar: o código diz *onde* olhar, o alvo vivo *confirma*.
 
 ---
 

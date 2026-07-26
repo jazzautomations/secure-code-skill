@@ -4,8 +4,9 @@ description: >-
   Guardrails de segurança para escrever E auditar web apps — especialmente apps de IA /
   vibe-coded (Supabase, Next.js, Node, React). Use ANTES de escrever ou editar código que
   toque em auth, banco de dados, pagamentos, uploads, segredos/env vars, rotas de API,
-  webhooks, JWT/sessão, cookies/tokens, CORS/headers ou DNS; e quando pedirem para revisar,
-  auditar, endurecer (harden) ou fazer security review de um projeto. Previne e detecta:
+  webhooks, JWT/sessão, cookies/tokens, CORS/headers ou DNS; e quando pedirem para revisar
+  código (white-box), auditar um alvo no ar (black-box), endurecer (harden) ou fazer security
+  review de um projeto — próprio ou de terceiro. Previne e detecta:
   segredos expostos, RLS ausente/quebrada, IDOR/BOLA, XSS/SQLi/SSTI, token em localStorage,
   falhas de JWT (alg confusion/none), falta de rate limit (denial of wallet), webhook sem
   verificação, CORS/headers mal configurados, SSRF, race condition/TOCTOU, subdomain
@@ -65,21 +66,42 @@ correspondente.
 
 ---
 
-## MODO 2 — DETECTAR (auditar projeto existente)
+## MODO 2 — DETECTAR (revisar código e/ou auditar alvo)
 
-Fluxo obrigatório: **DETECTAR → VERIFICAR → REPORTAR**. Nunca reporte por "parece"; confirme.
+Você quase sempre **TEM o código** (está construindo ou revisando o próprio projeto) → comece por
+**WHITE-BOX**. Se também tem o alvo no ar, complemente com **BLACK-BOX**. Grey-box (os dois juntos)
+é o ideal — o código diz *onde* olhar, o alvo vivo *confirma*. Fluxo dos dois:
+**DETECTAR → VERIFICAR → REPORTAR**. Nunca reporte por "parece"; confirme.
 
-1. **Mapeie a stack** (framework, banco, auth, deploy) antes de aplicar regras — adapte os
-   exemplos JS/Supabase/Next à realidade do projeto.
-2. **Rode as detecções mecânicas** (toolkit completo em `references/vectors.md`): grep de
-   segredos, RLS probe com anon key, `curl` em `/.git` e `/.env`, headers, CORS, subdomain
-   takeover (`dig`/`subfinder`), SPF/DMARC.
-3. **verify-before-flag** (reduz falso-positivo — confirme o COMPORTAMENTO, não o formato):
-   - RLS suspeita? Leia a tabela com a ANON key via REST. Volta dado de outro usuário → CONFIRMADO.
-   - Segredo no front? Confirme que é segredo real E está no bundle servido. anon key COM RLS não é bug.
-   - IDOR? Tente acessar o recurso de outro usuário com sua sessão. Só confirma se retornar.
-   - Header ausente? Cheque na resposta HTTP real de produção, não só na config.
-4. **Reporte** usando `references/audit-report-template.md`, ordenado por severidade.
+### 2A · WHITE-BOX (você tem o código) — track principal
+1. **Mapeie a stack** lendo `package.json`/`requirements.txt`, config de deploy, migrations e a
+   estrutura de pastas (onde ficam rotas, auth, camada de dados).
+2. **Rode o TOOLKIT WHITE-BOX** (grep por vetor em `references/vectors.md`): segredos hardcoded,
+   `NEXT_PUBLIC_` sensível, RLS nas migrations, `service_role` no client, IDOR, `req.body` em
+   preço/role, webhook sem verificação, token em localStorage, `dangerouslySetInnerHTML`, SQL
+   concatenado, CORS `*`, ausência de rate limit, `Math.random` em token, `jwt.verify` sem
+   `algorithms`, read-then-write em saldo, falta de validação de schema.
+3. **Cada hit do grep → ABRA o arquivo e leia o contexto.** O grep aponta; você confirma lendo a
+   lógica (pode ser comentário, teste, código morto ou já mitigado). Siga o playbook de revisão
+   sistemática em `references/code-review-playbook.md`.
+4. **Cheque o histórico do git** (`git log -p -- .env` e afins) e o `.gitignore`.
+
+### 2B · BLACK-BOX (alvo no ar) — complementar
+1. **Rode o TOOLKIT BLACK-BOX** (`references/vectors.md`): headers, CORS, `.git`/`.env` expostos,
+   RLS probe com anon key, subdomain takeover, SPF/DMARC.
+2. **Subdomínios do PRÓPRIO domínio:** puxe a lista REAL de deploys (Vercel/Cloudflare/painel de
+   DNS), não adivinhe por wordlist — wildcard `*` e nomes custom (ex: `jazzweb3audit`) escapam de
+   dicionário e o wildcard faz tudo "resolver".
+
+### verify-before-flag (obrigatório nos dois — reduz falso-positivo)
+- **(white-box)** grep bateu? Leia o arquivo — pode estar em comentário/teste/código morto ou já mitigado.
+- **(white-box)** `service_role` no repo? Confirme se é código SERVIDOR (ok) ou se vaza pro bundle client (CRÍTICO).
+- **(black-box)** RLS suspeita? Leia a tabela com a ANON key via REST. Volta dado de OUTRO usuário → CONFIRMADO. `[]` ou `401` → não é breach.
+- **(black-box)** Segredo no front? Confirme que é segredo real E está no bundle servido. anon key COM RLS não é bug.
+- **IDOR?** Tente acessar o recurso de outro usuário. Só confirma se retornar dado.
+- **Header ausente?** Cheque na resposta HTTP real de produção, não só na config.
+
+**Reporte** usando `references/audit-report-template.md`, ordenado por severidade.
 
 **Severidade:** CRÍTICO (exposição total de dados/dinheiro: RLS off, service key no cliente,
 segredo vivo, `.git`/`.env` acessível, IDOR sensível, webhook sem verificação, race em saldo,
