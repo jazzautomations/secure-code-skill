@@ -1,0 +1,13 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# nunca commite segredos (a skill não teria perdão)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
