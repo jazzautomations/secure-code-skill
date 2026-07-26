@@ -7,6 +7,10 @@ falhas em projetos já existentes.
 Feita para **vibe coders**: quem constrói apps rápido com IA e não quer vazar os dados dos usuários
 (nem a fatura da conta de nuvem).
 
+> ⚠️ **Copiloto de segurança de primeira linha — NÃO substitui um pentest profissional.** Reduz e
+> pega os erros mais comuns (com número medido, veja [`BENCHMARK.md`](BENCHMARK.md)); não é carimbo
+> de "seguro". Para app com dinheiro/saúde de muita gente em escala: use isto **e** contrate um profissional.
+
 > **Regra de ouro:** nunca confie no cliente, nunca confie no default do framework, todo segredo
 > fica no servidor.
 
