@@ -34,6 +34,46 @@ EXCLUDE='node_modules|/\.git/|dist/|build/|\.next/|vendor/|\.min\.'
 
 finding() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$FINDINGS"; }
 
+# service_role só é CRÍTICO se estiver em código CLIENT-SIDE. Em .sql (migrations/GRANT),
+# Edge Functions e paths server-only é uso LEGÍTIMO → INFO. (mata falso-positivo em massa)
+SERVER_ONLY='\.sql:|supabase/functions|/api/|/server/|/backend/|/functions/|/migrations/|\.server\.|/edge|/scripts/|/cli/|/cmd/'
+rls_check() {
+  grep -rEn "${GREP_INCLUDE[@]}" -- 'using ?\(true\)|with check ?\(true\)|USING ?\(TRUE\)' "$TARGET_PATH" 2>/dev/null \
+    | grep -vE "$EXCLUDE" | grep -viE '/__tests__/|\.(test|spec)\.' \
+    | while IFS= read -r hit; do
+        local loc="${hit%%:*}"; local rest="${hit#*:}"; local ln="${rest%%:*}"; local content="${rest#*:}"
+        # pula linha de comentário (não é policy de verdade, é doc/aviso)
+        echo "$content" | grep -qE '^[[:space:]]*(//|--|\*|#|/\*)' && continue
+        finding HIGH RLS "$loc:$ln" "policy RLS libera geral (using(true)) — confirmar se a tabela é pública de propósito"
+      done
+}
+
+random_check() {
+  grep -rEn "${GREP_INCLUDE[@]}" -- 'Math\.random|math/rand|mt_rand\(|random\.(random|randint|choice)' "$TARGET_PATH" 2>/dev/null \
+    | grep -vE "$EXCLUDE" \
+    | while IFS= read -r hit; do
+        local loc="${hit%%:*}"; local rest="${hit#*:}"; local ln="${rest%%:*}"; local content="${rest#*:}"
+        if echo "$content" | grep -qiE 'token|secret|otp|passwo|reset|nonce|session|salt|csrf|auth|verif|api.?key|private.?key|signing|uuid|guid'; then
+          finding HIGH RANDOM "$loc:$ln" "randomness fraca em contexto de segurança — use CSPRNG (crypto)"
+        else
+          finding INFO RANDOM "$loc:$ln" "Math.random/rand — ok se não for token/otp/senha/id de segurança"
+        fi
+      done
+}
+
+service_role_check() {
+  grep -rEn "${GREP_INCLUDE[@]}" -- 'service_role|SERVICE_ROLE_KEY|serviceRole' "$TARGET_PATH" 2>/dev/null \
+    | grep -vE "$EXCLUDE" | grep -vE "$SERVER_ONLY" \
+    | while IFS= read -r hit; do
+        local loc="${hit%%:*}"; local rest="${hit#*:}"; local ln="${rest%%:*}"
+        if grep -qiE "NEXT_PUBLIC_|VITE_|REACT_APP_|EXPO_PUBLIC_|['\"]use client['\"]" "$loc" 2>/dev/null; then
+          finding CRITICAL RLS-SERVICEROLE "$loc:$ln" "service_role em arquivo CLIENT-SIDE = bypassa RLS no browser"
+        else
+          finding INFO RLS-SERVICEROLE "$loc:$ln" "service_role — confirmar que é só server-side (ok em edge/api/migration)"
+        fi
+      done
+}
+
 # scan_grep SEV VECTOR REGEX MSG  -> gera 1 finding por linha casada (arquivo:linha)
 scan_grep() {
   local sev="$1" vec="$2" pat="$3" msg="$4"
@@ -69,10 +109,10 @@ white_box() {
   scan_grep CRITICAL SECRETS 'sk_live_[A-Za-z0-9]{10,}|sk_test_[A-Za-z0-9]{10,}|AKIA[0-9A-Z]{16}|-----BEGIN (RSA|EC|OPENSSH|PRIVATE)' 'segredo hardcoded no código'
   scan_grep CRITICAL JWT-SECRET 'change-me|changeme|do-not-share|secret.{0,3}=.{0,3}["'"'"'](test|dev|123|password|secret)' 'segredo/JWT hardcoded fraco ou default'
   scan_grep CRITICAL SECRETS-PUBLIC '(NEXT_PUBLIC_|VITE_|REACT_APP_|EXPO_PUBLIC_)[A-Z_]*(SECRET|SERVICE_ROLE|PRIVATE|PASSWORD)' 'segredo com prefixo público (vaza no bundle do browser)'
-  scan_grep CRITICAL RLS-SERVICEROLE 'service_role|SERVICE_ROLE_KEY|serviceRole' 'service_role fora do servidor = bypassa RLS (confirmar se é client-side)'
+  service_role_check
 
-  # --- 2. RLS ---
-  scan_grep HIGH RLS 'using ?\(true\)|with check ?\(true\)|USING ?\(TRUE\)' 'policy RLS libera geral (using(true))'
+  # --- 2. RLS (pula comentários e testes) ---
+  rls_check
 
   # --- 3/6. localStorage token, XSS ---
   scan_grep HIGH LOCALSTORAGE '(localStorage|sessionStorage)\.(set|get)Item\(["'"'"']?(token|jwt|auth|access|session)' 'token de sessão em localStorage (use cookie HttpOnly)'
@@ -85,8 +125,8 @@ white_box() {
   # --- 10. CORS ---
   scan_grep MEDIUM CORS 'AllowOrigins: *["'"'"']\*|origin: *["'"'"']\*|Access-Control-Allow-Origin["'"'"': ]+\*|allow_origins=\[["'"'"']\*' 'CORS liberado (*) — usar allowlist em API autenticada'
 
-  # --- 25. randomness fraco ---
-  scan_grep HIGH RANDOM '(Math\.random|math/rand|mt_rand\(|[^_]rand\(|random\.(random|randint|choice))[^)]*' 'randomness fraca — se for token/otp/senha, use CSPRNG'
+  # --- 25. randomness fraco (só HIGH em contexto de segurança; senão INFO) ---
+  random_check
 
   # --- 30. over-fetching ---
   scan_grep INFO OVERFETCH "\.select\(['\"]\\*|SELECT \\*" 'select(*) — confirmar que não vaza campo sensível na resposta'
