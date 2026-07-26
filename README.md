@@ -81,8 +81,8 @@ você confirma lendo (verify-before-flag). Requer `bash`, `grep`, `curl`, `dig`;
 `tests/` tem código **vulnerável de propósito** (um por vetor) e código **limpo**. `make test`
 verifica que cada detector dispara **e** que o código limpo não gera falso-positivo (inclusive o
 caso clássico: `NEXT_PUBLIC_SUPABASE_ANON_KEY` no front **não** é bug se a RLS está ligada). O CI
-(`.github/workflows/scan.yml`) roda isso em todo push — com a Action **pinada por SHA** (praticando
-o vetor 13 da própria skill).
+(`ci/scan.yml` → copie para `.github/workflows/`) roda isso em todo push — com a Action **pinada
+por SHA** (praticando o vetor 13 da própria skill).
 
 ### Como agente do Claude Code
 `agents/security-reviewer.md` é um subagente pronto: copie para `~/.claude/agents/` e peça
@@ -154,7 +154,7 @@ Esses não usam skills do Claude Code. Copie o bloco **MODO 1** de
 │   └── fixtures/{vulnerable,clean}/  # código vulnerável de propósito + código limpo
 ├── agents/
 │   └── security-reviewer.md          # subagente do Claude Code que usa a skill
-├── .github/workflows/scan.yml        # CI: roda os testes + self-scan (actions pinada por SHA)
+├── ci/scan.yml                       # CI (copie p/ .github/workflows/): testes + self-scan, action pinada por SHA
 └── secure-code/                      # a SKILL
     ├── SKILL.md                      # o cérebro: 3 modos + regras + falso-positivos
     └── references/
