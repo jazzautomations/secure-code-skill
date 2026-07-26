@@ -50,9 +50,20 @@ hardcoded_secret_check() {
       done
 }
 
+xss_check() {
+  # dangerouslySetInnerHTML / v-html / innerHTML = <dinâmico> ; pula comentário e innerHTML='' (limpar)
+  grep -rEn "${GREP_INCLUDE[@]}" -- 'dangerouslySetInnerHTML|v-html|\.innerHTML[[:space:]]*\+?=[[:space:]]*[^"'"'"' [:space:];]' "$TARGET_PATH" 2>/dev/null \
+    | grep -vE "$EXCLUDE" | grep -viE '\.(test|spec)\.|/__tests__/' \
+    | while IFS= read -r hit; do
+        local loc="${hit%%:*}"; local rest="${hit#*:}"; local ln="${rest%%:*}"; local content="${rest#*:}"
+        echo "$content" | grep -qE '^[[:space:]]*(//|--|\*|#|/\*)' && continue
+        finding MEDIUM XSS "$loc:$ln" "saída HTML dinâmica sem sanitização (XSS) — confirmar DOMPurify/escape"
+      done
+}
+
 idor_check() {
   # arquivo que pega id da request mas NÃO referencia dono/sessão → candidato a IDOR
-  grep -rlEI "${GREP_INCLUDE[@]}" -- 'params\.id|Params\("id"\)|req\.query\.id|request\.args\[.id|\$_(GET|POST)\[' "$TARGET_PATH" 2>/dev/null \
+  grep -rlEI "${GREP_INCLUDE[@]}" -- 'params\.id|Params\("id"\)|req\.query\.id|request\.args\[.id|\$_(GET|POST|REQUEST)\[[^]]*id' "$TARGET_PATH" 2>/dev/null \
     | grep -vE "$EXCLUDE" | grep -viE '\.(test|spec)\.|/__tests__/' \
     | while IFS= read -r f; do
         if ! grep -qiE 'user_?id|session|auth\.uid|locals\(.user_id|current_?user|owner|req\.user|getUser' "$f" 2>/dev/null; then
@@ -143,10 +154,10 @@ white_box() {
 
   # --- 3/6. localStorage token, XSS ---
   scan_grep HIGH LOCALSTORAGE '(localStorage|sessionStorage)\.(set|get)Item\(["'"'"']?(token|jwt|auth|access|session)' 'token de sessão em localStorage (use cookie HttpOnly)'
-  scan_grep MEDIUM XSS 'dangerouslySetInnerHTML|\.innerHTML *=|v-html' 'saída HTML sem sanitização (XSS) — confirmar se sanitiza'
+  xss_check
 
   # --- 8. Injeção SQL / comando / SSJI (eval) ---
-  scan_grep HIGH SQLI 'fmt\.Sprintf\([^)]*(SELECT|INSERT|UPDATE|DELETE)|query\(`[^`]*\$\{|execute\(f["'"'"'][^)]*(SELECT|INSERT)|cursor\.execute\([^,]*%' 'SQL montado por concatenação (use parametrizado)'
+  scan_grep HIGH SQLI 'fmt\.Sprintf\([^)]*(SELECT|INSERT|UPDATE|DELETE)|query\(`[^`]*\$\{|execute\(f["'"'"'][^)]*(SELECT|INSERT)|cursor\.execute\([^,]*%|(SELECT|INSERT|UPDATE|DELETE|REPLACE)[^;]*\$[A-Za-z_]' 'SQL montado por concatenação/interpolação (use parametrizado)'
   scan_grep HIGH CMDI 'os\.system\(|subprocess\.[a-z]+\([^)]*shell=True|child_process|exec\([^)]*(req|\$_|params)|shell_exec\(' 'possível command injection (input em shell/exec)'
   scan_grep CRITICAL SSJI 'eval\(|new Function\(|setTimeout\(["'"'"']|setInterval\(["'"'"']|vm\.runIn' 'eval/Function/vm com string = injeção de código no servidor (SSJI/RCE)'
 
@@ -159,8 +170,9 @@ white_box() {
   # --- 1c. segredo hardcoded em config (secret/senha = "literal") ---
   hardcoded_secret_check
 
-  # --- 10. CORS ---
-  scan_grep MEDIUM CORS 'AllowOrigins: *["'"'"']\*|origin: *["'"'"']\*|Access-Control-Allow-Origin["'"'"': ]+\*|allow_origins=\[["'"'"']\*' 'CORS liberado (*) — usar allowlist em API autenticada'
+  # --- 10. CORS (config de servidor = MEDIUM; header cru em edge/serverless = INFO) ---
+  scan_grep MEDIUM CORS 'AllowOrigins: *["'"'"']\*|[^-]origin: *["'"'"']\*|allow_origins=\[ *["'"'"']\*' 'CORS liberado (*) na config do servidor — usar allowlist em API autenticada'
+  scan_grep INFO CORS 'Access-Control-Allow-Origin["'"'"': ,]+\*' 'CORS * em header (comum em edge/serverless) — restringir se o endpoint for autenticado'
 
   # --- 25. randomness fraco (só HIGH em contexto de segurança; senão INFO) ---
   random_check
