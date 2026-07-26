@@ -9,7 +9,7 @@ check() { if [ "$2" -eq 0 ]; then echo "  ✓ $1"; pass=$((pass+1)); else echo "
 
 echo "== VULNERÁVEL (cada detector deve disparar) =="
 OUT="$("$SCAN" --json "$DIR/fixtures/vulnerable" 2>/dev/null)"
-for vec in SECRETS JWT-SECRET SECRETS-PUBLIC RLS-SERVICEROLE RLS LOCALSTORAGE XSS SQLI CMDI CORS RANDOM JWT-ALG; do
+for vec in SECRETS JWT-SECRET SECRETS-PUBLIC RLS-SERVICEROLE RLS LOCALSTORAGE XSS SQLI CMDI CORS RANDOM JWT-ALG SSJI SECRETS-HARDCODED CRYPTO OPENREDIR IDOR; do
   if echo "$OUT" | grep -q "\"vector\":\"$vec\""; then check "detecta $vec" 0; else check "detecta $vec" 1; fi
 done
 

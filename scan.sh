@@ -30,13 +30,37 @@ FINDINGS="$(mktemp)"; trap 'rm -f "$FINDINGS"' EXIT
 GREP_INCLUDE=(--include=*.js --include=*.ts --include=*.jsx --include=*.tsx --include=*.py
   --include=*.go --include=*.rb --include=*.php --include=*.sql --include=*.yml --include=*.yaml
   --include=*.json --include=*.env --include=*.tf)
-EXCLUDE='node_modules|/\.git/|dist/|build/|\.next/|vendor/|\.min\.'
+EXCLUDE='node_modules|/\.git/|dist/|build/|\.next/|vendor/|\.min\.|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|/tutorial/'
 
 finding() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$FINDINGS"; }
 
 # service_role só é CRÍTICO se estiver em código CLIENT-SIDE. Em .sql (migrations/GRANT),
 # Edge Functions e paths server-only é uso LEGÍTIMO → INFO. (mata falso-positivo em massa)
 SERVER_ONLY='\.sql:|supabase/functions|/api/|/server/|/backend/|/functions/|/migrations/|\.server\.|/edge|/scripts/|/cli/|/cmd/'
+hardcoded_secret_check() {
+  # KEY : "valor-literal"  (secret/senha/apikey com string embutida, não env)
+  grep -rPIin "${GREP_INCLUDE[@]}" -- '(secret|passwd|password|api_?key|apikey|private_?key|access_?key|auth_?token)[a-z_]*[\x22\x27]?\s*[:=]\s*[\x22\x27][^\x22\x27]{6,}[\x22\x27]' "$TARGET_PATH" 2>/dev/null \
+    | grep -vE "$EXCLUDE" | grep -viE '\.(test|spec)\.|/__tests__/' \
+    | while IFS= read -r hit; do
+        local loc="${hit%%:*}"; local rest="${hit#*:}"; local ln="${rest%%:*}"; local content="${rest#*:}"
+        # pula comentário (código morto), env, import, placeholder e exemplo
+        echo "$content" | grep -qE '^[[:space:]]*(//|--|\*|#|/\*)' && continue
+        echo "$content" | grep -qiE 'process\.env|getenv|os\.environ|import |require\(|your_|example|placeholder|xxxx|\*\*\*|\$\{|<[a-z]+>' && continue
+        finding CRITICAL SECRETS-HARDCODED "$loc:$ln" "segredo/senha hardcoded em literal — mover para variável de ambiente"
+      done
+}
+
+idor_check() {
+  # arquivo que pega id da request mas NÃO referencia dono/sessão → candidato a IDOR
+  grep -rlEI "${GREP_INCLUDE[@]}" -- 'params\.id|Params\("id"\)|req\.query\.id|request\.args\[.id|\$_(GET|POST)\[' "$TARGET_PATH" 2>/dev/null \
+    | grep -vE "$EXCLUDE" | grep -viE '\.(test|spec)\.|/__tests__/' \
+    | while IFS= read -r f; do
+        if ! grep -qiE 'user_?id|session|auth\.uid|locals\(.user_id|current_?user|owner|req\.user|getUser' "$f" 2>/dev/null; then
+          finding MEDIUM IDOR "$f" "usa id da request sem referência a dono/sessão no arquivo — confirmar ownership (IDOR/BOLA)"
+        fi
+      done
+}
+
 rls_check() {
   grep -rEn "${GREP_INCLUDE[@]}" -- 'using ?\(true\)|with check ?\(true\)|USING ?\(TRUE\)' "$TARGET_PATH" 2>/dev/null \
     | grep -vE "$EXCLUDE" | grep -viE '/__tests__/|\.(test|spec)\.' \
@@ -114,13 +138,26 @@ white_box() {
   # --- 2. RLS (pula comentários e testes) ---
   rls_check
 
+  # --- 3b. IDOR heurístico (ponte scanner→agente: o agente confirma lendo) ---
+  idor_check
+
   # --- 3/6. localStorage token, XSS ---
   scan_grep HIGH LOCALSTORAGE '(localStorage|sessionStorage)\.(set|get)Item\(["'"'"']?(token|jwt|auth|access|session)' 'token de sessão em localStorage (use cookie HttpOnly)'
   scan_grep MEDIUM XSS 'dangerouslySetInnerHTML|\.innerHTML *=|v-html' 'saída HTML sem sanitização (XSS) — confirmar se sanitiza'
 
-  # --- 8. Injeção SQL / comando ---
+  # --- 8. Injeção SQL / comando / SSJI (eval) ---
   scan_grep HIGH SQLI 'fmt\.Sprintf\([^)]*(SELECT|INSERT|UPDATE|DELETE)|query\(`[^`]*\$\{|execute\(f["'"'"'][^)]*(SELECT|INSERT)|cursor\.execute\([^,]*%' 'SQL montado por concatenação (use parametrizado)'
   scan_grep HIGH CMDI 'os\.system\(|subprocess\.[a-z]+\([^)]*shell=True|child_process|exec\([^)]*(req|\$_|params)|shell_exec\(' 'possível command injection (input em shell/exec)'
+  scan_grep CRITICAL SSJI 'eval\(|new Function\(|setTimeout\(["'"'"']|setInterval\(["'"'"']|vm\.runIn' 'eval/Function/vm com string = injeção de código no servidor (SSJI/RCE)'
+
+  # --- 6b. crypto fraco / uso incorreto ---
+  scan_grep MEDIUM CRYPTO 'createCipheriv?\(|createHash\(["'"'"'](md5|sha1)|[^A-Za-z](MD5|SHA1)\(|des-ede3|des-cbc|RC4|Math\.random.*iv' 'crypto fraco/uso incorreto — algoritmo forte + IV/nonce aleatório por operação'
+
+  # --- 21. open redirect ---
+  scan_grep MEDIUM OPENREDIR 'res\.redirect\([^)]*(req\.|request\.|query|params)|redirect\((request|req)\.' 'possível open redirect (redirect com input do usuário) — usar allowlist'
+
+  # --- 1c. segredo hardcoded em config (secret/senha = "literal") ---
+  hardcoded_secret_check
 
   # --- 10. CORS ---
   scan_grep MEDIUM CORS 'AllowOrigins: *["'"'"']\*|origin: *["'"'"']\*|Access-Control-Allow-Origin["'"'"': ]+\*|allow_origins=\[["'"'"']\*' 'CORS liberado (*) — usar allowlist em API autenticada'
