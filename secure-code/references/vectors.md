@@ -59,8 +59,17 @@ padrão inseguro (❌) e o seguro (✅). Contexto e casos reais que motivam cada
 ✅ magic bytes + tamanho + nome novo + bucket isolado sem execução; SVG tratado.
 ✅ SSRF: allowlist de host + bloqueio de IP privado/link-local/metadata (169.254.169.254); sem redirects.
 
-## 13. Slopsquatting / dependências
-✅ só importar pacote confirmado (nome exato, mantenedor, downloads). Lockfile + versões fixas. `npm audit`/`pip-audit`.
+## 13. Supply chain (dependências + CI/CD + build)
+Superfície inteira do "código que não é seu mas roda no seu contexto":
+- **Slopsquatting/typosquatting:** só importar pacote confirmado (nome exato, mantenedor, downloads, repo, data). Nunca instalar só porque a IA sugeriu.
+- **Integridade de deps:** lockfile commitado + versões fixas; instalar com `npm ci`/`pip install --require-hashes` (não `npm install` em prod). `npm audit`/`pip-audit`/`osv-scanner`.
+- **Pacotes maliciosos:** desconfiar de `postinstall`/`preinstall` scripts em deps novas; `npm install --ignore-scripts` em CI quando possível.
+- **Dependency confusion:** pacotes internos com nome que pode ser registrado no público → usar scope privado (`@org/`) + registry travado (`.npmrc`).
+- **CI/CD (o mais esquecido):** GitHub Actions **pinadas por SHA** (não `@v4` mutável); `permissions:` mínimo no workflow; **nunca** `pull_request_target` rodando código de PR não-confiável; secrets do CI só via secrets store (nunca em `echo`/logs); preferir **OIDC** a segredo de longa duração.
+- **Docker:** base image pinada por **digest** (`FROM node:20@sha256:...`), não `:latest`; scan da imagem (trivy).
+- **Terceiros no front:** `<script src>` externo com **SRI** (`integrity=`), ou self-host.
+
+✅ regra: trate dependência e pipeline como código não-confiável — pin, verifique, minimize privilégio.
 
 ## 14. Auth / reset de senha
 ✅ token de reset CSPRNG ≥128 bits, HASHEADO no banco, expira 15-30min, uso único · sem user enumeration ·
@@ -241,10 +250,33 @@ grep -rLEn "zod|yup|joi|pydantic|valibot|class-validator" $(grep -rlE "req\.body
 # 12. Upload / SSRF
 grep -rEn "multer|formidable|busboy|\.upload|fetch\(.*(req|params|query)|axios.*(req\.(body|query|params))" . | grep -v node_modules
 
-# 13. Dependências (slopsquatting / vulneráveis)
-test -f package-lock.json -o -f pnpm-lock.yaml -o -f yarn.lock || echo "⚠️ sem lockfile"
-npm audit || pip-audit || osv-scanner -r .
+# 13. Supply chain (deps + CI/CD + build)
+test -f package-lock.json -o -f pnpm-lock.yaml -o -f yarn.lock -o -f requirements.txt -o -f go.sum || echo "⚠️ sem lockfile"
+npm audit || pip-audit || osv-scanner -r . ; trivy fs . 2>/dev/null | head
+# GitHub Actions: pin por SHA? permissions? gatilho perigoso?
+grep -rEn "uses: .+@v?[0-9]+$|pull_request_target|permissions:|secrets\.[A-Z_]+" .github/workflows/ 2>/dev/null
+# postinstall suspeito em deps + Docker :latest sem digest + script externo sem SRI
+grep -rEn "\"(pre|post)install\"" package.json 2>/dev/null
+grep -rEn "^FROM .+:latest|^FROM [^@]+$" **/Dockerfile Dockerfile 2>/dev/null
+grep -rEn "<script[^>]*src=[\"']https?://" . | grep -v "integrity=" | grep -v node_modules
 ```
 
-> **Regra de leitura:** grep dá o *onde*, você dá o *veredito* abrindo o arquivo. Um `Math.random`
-> num gerador de cor não é bug; num gerador de token de reset é CRÍTICO. Sempre leia o contexto.
+## 🌐 Multi-linguagem (o grep JS acima → equivalente noutra stack)
+O teste de fogo mostrou: os padrões acima são JS/TS; adapte à linguagem real do backend.
+
+| Vetor | Go | Python | PHP |
+|---|---|---|---|
+| SQLi (8) | `fmt.Sprintf(".*SELECT` · `db.Query(.*+` | `execute\(f"` · `cursor.execute\(.*%` · `.format\(.*SELECT` | `mysqli_query\(.*\$` · `->query\(.*\.` |
+| JWT (18) | `jwt.Parse` · `SigningMethod` · Keyfunc valida `*SigningMethodHMAC`? | `jwt.decode\(.*verify=False` · `algorithms=` | `JWT::decode` · `->getClaim` |
+| Segredo (1) | `= "…"` fora de `os.Getenv` | `= "…"` fora de `os.environ`/`getenv` | `= "…"` fora de `getenv`/`$_ENV` |
+| CORS (10) | `AllowOrigins: "*"` (fiber/gin) | `CORS(app, origins="*")` · `allow_origins=["*"]` | `header('Access-Control-Allow-Origin: *')` |
+| Cmd inj (8) | `exec.Command(.*+` · `sh -c` | `os.system` · `subprocess.*shell=True` | `exec\(`·`system\(`·`shell_exec\(` |
+| Rand (25) | `math/rand` p/ token (use `crypto/rand`) | `random.` p/ token (use `secrets`) | `rand\(`·`mt_rand\(` (use `random_bytes`) |
+| IDOR (3) | handler usa `c.Params("id")` + filtra por `Locals("user_id")`? | `request.args\[.id.\]` + filtra por `current_user`? | `$_GET\['id'\]` + checa dono? |
+
+> **Regra de leitura:** grep dá o *onde*, você dá o *veredito* abrindo o arquivo. Um `math/rand`
+> numa cor não é bug; num token de reset é CRÍTICO. Sempre leia o contexto.
+>
+> **⚠️ prod ≠ repo:** confirme que o código auditado é o que roda em produção. Deploys por
+> swap-de-binário, hotfix no servidor ou env no painel (Vercel/Supabase) fazem prod DIVERGIR do
+> git. Auditar o repo ≠ auditar o que está no ar — cheque os dois.

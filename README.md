@@ -40,12 +40,16 @@ que a imprensa de segurança vem reportando sobre apps gerados por IA / vibe-cod
 
 Segredos expostos · RLS ausente/quebrada (Supabase) · IDOR/BOLA · confiar no cliente (preço/role) ·
 webhook sem verificação · token em localStorage · XSS · SQL/command injection · headers de
-segurança · CORS · rate limit / denial of wallet · upload inseguro / SSRF · slopsquatting ·
-auth e reset de senha fracos · erros verbosos & logs com PII · prompt injection · **subdomain
-takeover** · **JWT alg confusion / none / secret fraco** · **race condition / TOCTOU** ·
-`.git`/`.env`/source maps/Swagger expostos · open redirect / OAuth · path traversal / SSTI ·
-GraphQL · **SPF/DKIM/DMARC** · sessão insegura · object storage público · logging & monitoramento ·
-validação server-side.
+segurança · CORS · rate limit / denial of wallet · upload inseguro / SSRF · **supply chain**
+(slopsquatting, deps vulneráveis, **CI/CD sem pin de SHA**, Docker sem digest, script de terceiro
+sem SRI, dependency confusion) · auth e reset de senha fracos · erros verbosos & logs com PII ·
+prompt injection · **subdomain takeover** · **JWT alg confusion / none / secret fraco** · **race
+condition / TOCTOU** · `.git`/`.env`/source maps/Swagger expostos · open redirect / OAuth · path
+traversal / SSTI · GraphQL · **SPF/DKIM/DMARC** · sessão insegura · object storage público ·
+logging & monitoramento · validação server-side.
+
+**Multi-linguagem:** os detectores (grep por vetor) cobrem **JS/TS, Go, Python e PHP** — o toolkit
+white-box traz o padrão equivalente em cada stack.
 
 Cada vetor tem o padrão **❌ errado → ✅ certo** em [`secure-code/references/vectors.md`](secure-code/references/vectors.md).
 

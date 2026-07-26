@@ -10,7 +10,9 @@ description: >-
   segredos expostos, RLS ausente/quebrada, IDOR/BOLA, XSS/SQLi/SSTI, token em localStorage,
   falhas de JWT (alg confusion/none), falta de rate limit (denial of wallet), webhook sem
   verificação, CORS/headers mal configurados, SSRF, race condition/TOCTOU, subdomain
-  takeover, SPF/DKIM/DMARC ausente, .git/.env/source maps expostos, slopsquatting e mais.
+  takeover, SPF/DKIM/DMARC ausente, .git/.env/source maps expostos, e supply chain (slopsquatting,
+  deps vulneráveis, CI/CD sem pin de SHA, Docker sem digest, script de terceiro sem SRI). Cobre
+  JS/TS, Go, Python e PHP.
 ---
 
 # Secure Code — Guardrails para escrever e auditar apps
@@ -85,6 +87,8 @@ Você quase sempre **TEM o código** (está construindo ou revisando o próprio 
    lógica (pode ser comentário, teste, código morto ou já mitigado). Siga o playbook de revisão
    sistemática em `references/code-review-playbook.md`.
 4. **Cheque o histórico do git** (`git log -p -- .env` e afins) e o `.gitignore`.
+5. **Supply chain:** deps (lockfile/`npm ci`/audit/slopsquatting), CI/CD (`.github/workflows` pin por SHA, `permissions`, secrets), Docker (digest), SRI. Ver vetor 13.
+6. **⚠️ prod ≠ repo:** confirme que o código é o que roda no ar — swap-de-binário, hotfix ou env no painel (Vercel/Supabase) fazem prod divergir do git. Audite os dois.
 
 ### 2B · BLACK-BOX (alvo no ar) — complementar
 1. **Rode o TOOLKIT BLACK-BOX** (`references/vectors.md`): headers, CORS, `.git`/`.env` expostos,
