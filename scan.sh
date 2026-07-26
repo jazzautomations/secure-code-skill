@@ -29,7 +29,8 @@ done
 FINDINGS="$(mktemp)"; trap 'rm -f "$FINDINGS"' EXIT
 GREP_INCLUDE=(--include=*.js --include=*.ts --include=*.jsx --include=*.tsx --include=*.py
   --include=*.go --include=*.rb --include=*.php --include=*.sql --include=*.yml --include=*.yaml
-  --include=*.json --include=*.env --include=*.tf)
+  --include=*.json --include=*.env --include=*.tf --include=*.html --include=*.vue
+  --include=*.svelte --include=*.astro)
 EXCLUDE='node_modules|/\.git/|dist/|build/|\.next/|vendor/|\.min\.|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|/tutorial/'
 
 finding() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$FINDINGS"; }
@@ -88,6 +89,7 @@ random_check() {
     | grep -vE "$EXCLUDE" \
     | while IFS= read -r hit; do
         local loc="${hit%%:*}"; local rest="${hit#*:}"; local ln="${rest%%:*}"; local content="${rest#*:}"
+        echo "$content" | grep -qE '^[[:space:]]*(//|--|\*|#|/\*)' && continue
         if echo "$content" | grep -qiE 'token|secret|otp|passwo|reset|nonce|session|salt|csrf|auth|verif|api.?key|private.?key|signing|uuid|guid'; then
           finding HIGH RANDOM "$loc:$ln" "randomness fraca em contexto de segurança — use CSPRNG (crypto)"
         else
@@ -171,7 +173,7 @@ white_box() {
   hardcoded_secret_check
 
   # --- 10. CORS (config de servidor = MEDIUM; header cru em edge/serverless = INFO) ---
-  scan_grep MEDIUM CORS 'AllowOrigins: *["'"'"']\*|[^-]origin: *["'"'"']\*|allow_origins=\[ *["'"'"']\*' 'CORS liberado (*) na config do servidor — usar allowlist em API autenticada'
+  scan_grep MEDIUM CORS 'AllowOrigins: *["'"'"']\*|[^-]origin: *["'"'"']\*|allow_origins=\[ *["'"'"']\*|[^a-zA-Z]cors\(\)|cors\(\{ *\}\)' 'CORS liberado (aberto/*) — usar allowlist explícita em API autenticada'
   scan_grep INFO CORS 'Access-Control-Allow-Origin["'"'"': ,]+\*' 'CORS * em header (comum em edge/serverless) — restringir se o endpoint for autenticado'
 
   # --- 25. randomness fraco (só HIGH em contexto de segurança; senão INFO) ---

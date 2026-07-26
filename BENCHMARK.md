@@ -44,6 +44,24 @@ Os 167 falsos eram `service_role` em `.sql`/migrations/Edge Functions (uso legí
 Os mediums caíram triando: CORS `*` em edge (boilerplate) → INFO; `innerHTML=''` (limpar) e
 comentários → não são XSS; ruído de lockfile fora do escopo.
 
+## 4. Prevenção medida (o MODO 1 reduz vulnerabilidade?) — A/B
+Dois agentes idênticos construíram a MESMA API (login, /users/:id, webhook Stripe, busca,
+credenciais, CORS). Um **sem** guardrail (skill suprimida), um **com** o MODO 1 injetado. Scanner
+nos dois:
+
+| | Baseline (sem MODO 1) | Com MODO 1 |
+|---|---|---|
+| 🔴 Crítico | 1 (secret hardcoded) | **0** |
+| 🟠 Alto | 2 (token em localStorage) | **0** |
+| 🟡 Médio | 2 (CORS aberto + IDOR) | **0** |
+
+O baseline saiu com senha em texto, `/users/:id` sem auth, `cors()` aberto e token em localStorage;
+o guarded usou bcrypt, ownership check, cookie HttpOnly, HMAC no webhook e CORS allowlist.
+**Caveat honesto:** n=1 task, medido pelo scanner (não por pentester humano). É sinal forte e
+direcional, não prova estatística. Este A/B também revelou 3 cegueiras do scanner que foram
+corrigidas: não escaneava `.html` (inline JS/localStorage), não pegava `cors()` puro, e flaggava
+`Math.random` em comentário.
+
 ## ⚠️ Limitações honestas (o que o scanner NÃO faz)
 1. **IDOR é heurístico grosso (nível de arquivo).** Flag arquivo sem nenhuma referência a dono/
    sessão; NÃO pega IDOR por-handler num arquivo que tem ownership em outra função. É candidato,
