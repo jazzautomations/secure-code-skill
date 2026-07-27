@@ -103,7 +103,7 @@ Você quase sempre **TEM o código** (está construindo ou revisando o próprio 
 1. **Rode o TOOLKIT BLACK-BOX** (`references/vectors.md`): headers, CORS, `.git`/`.env` expostos,
    RLS probe com anon key, subdomain takeover, SPF/DMARC.
 2. **Subdomínios do PRÓPRIO domínio:** puxe a lista REAL de deploys (Vercel/Cloudflare/painel de
-   DNS), não adivinhe por wordlist — wildcard `*` e nomes custom (ex: `jazzweb3audit`) escapam de
+   DNS), não adivinhe por wordlist — wildcard `*` e nomes custom (ex: `internal-api`) escapam de
    dicionário e o wildcard faz tudo "resolver".
 
 ### verify-before-flag (obrigatório nos dois — reduz falso-positivo)
