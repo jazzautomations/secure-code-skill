@@ -76,10 +76,11 @@ bash scan.sh --json .               # saída JSON pra CI/pipeline
 # ou: make test   |   make scan   |   make scan URL=https://exemplo.com
 ```
 
-Saída ordenada por severidade (🔴 crítico → ℹ️ info), com `arquivo:linha` e exit code ≠ 0 se houver
-crítico/alto (pronto pra CI). **Cada achado é ponto de partida, não veredito** — o scanner aponta,
-você confirma lendo (verify-before-flag). Requer `bash`, `grep`, `curl`, `dig`; usa `gitleaks`,
-`osv-scanner`, `govulncheck` se estiverem instalados.
+Saída ordenada por severidade (🔴 crítico → ℹ️ info), com `arquivo:linha`. Exit code pronto pra CI:
+`0` = limpo, `1` = achou crítico/alto, `2` = erro de uso (path inválido — não passa como "limpo").
+**Cada achado é ponto de partida, não veredito** — o scanner aponta, você confirma lendo
+(verify-before-flag). Requer `bash`, `grep`, `curl`, `dig`; usa `osv-scanner` e `govulncheck` se
+estiverem instalados.
 
 ### Provado por testes
 `tests/` tem código **vulnerável de propósito** (um por vetor) e código **limpo**. `make test`

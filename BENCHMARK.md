@@ -3,10 +3,18 @@
 Medido, não afirmado. Reproduza: `make test` e rode `scan.sh` em qualquer alvo.
 
 ## 1. Self-test (detectores + falso-positivo)
-`make test` → **18/18**. Cada vetor tem fixture vulnerável (deve disparar) e um conjunto limpo
-que **não pode** gerar crítico/alto. Inclui os casos clássicos que confundem scanner cru:
-`NEXT_PUBLIC_SUPABASE_ANON_KEY` no front **não** é bug se a RLS está ligada; `service_role` em
-Edge Function/migration **não** é bug (uso legítimo server-side). Esses passam limpo.
+`make test` → **21/21** (20 detectores + falso-positivo). Cada vetor tem fixture vulnerável (deve
+disparar) e um conjunto limpo que **não pode** gerar crítico/alto. Inclui os casos clássicos que
+confundem scanner cru: `NEXT_PUBLIC_SUPABASE_ANON_KEY` no front **não** é bug se a RLS está ligada;
+`service_role` em Edge Function/migration **não** é bug (uso legítimo server-side); JWT/anon key
+não vira "token de provedor"; `yaml.load(..., Loader=SafeLoader)` e `document.write("<hr>")` estático
+passam limpo. Esses não geram falso-positivo.
+
+Cobertura de detector inclui SQLi (interpolação **e** concatenação com `+`), XSS (JSX/Vue **e** sinks
+de DOM: `innerHTML`/`outerHTML`/`insertAdjacentHTML`/`document.write`), tokens hardcoded de provedor
+(GitHub/Slack/Google/GitLab/OpenAI/npm + AWS/Stripe/chave privada), desserialização insegura
+(`pickle`/`yaml.load`/`unserialize`), path traversal e SSRF — além de RLS, service_role, localStorage,
+CMDi, SSJI, crypto fraco, open redirect, CORS, randomness fraca, JWT sem algoritmo e IDOR heurístico.
 
 ## 2. Benchmark externo — OWASP NodeGoat (app vulnerável de propósito)
 Ground-truth: vulns estáticas documentadas do NodeGoat.
@@ -67,6 +75,9 @@ direcional, não prova estatística.
    o agente confirma lendo.
 2. **Grep não vê runtime/lógica.** Race condition, bypass de fluxo de auth, lógica de negócio →
    só com leitura (o agente `security-reviewer`), não com regex.
+   - **Prototype pollution** (`Object.assign(target, req.body)`, merge recursivo) é deixado de fora
+     de propósito: não dá pra distinguir merge legítimo de poluição por regex sem virar ruído. Fica
+     pro agente na leitura, não pro scanner.
 3. **Dois benchmarks externos (NodeGoat + DVWA).** Cobrem vulns estáticas (JS + PHP). App de vuln
    puramente runtime (ex: Juice Shop) pontuaria baixo — grep tem teto.
 4. **Requer bash 4+ e GNU grep** (arrays associativos, `grep -P`). Não roda no bash 3.2 do macOS puro.
