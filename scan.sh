@@ -54,12 +54,25 @@ hardcoded_secret_check() {
 
 xss_check() {
   # dangerouslySetInnerHTML / v-html / innerHTML = <dinâmico> ; pula comentário e innerHTML='' (limpar)
-  grep -rEn "${GREP_INCLUDE[@]}" -- 'dangerouslySetInnerHTML|v-html|\.innerHTML[[:space:]]*\+?=[[:space:]]*[^"'"'"' [:space:];]' "$TARGET_PATH" 2>/dev/null \
+  grep -rEn "${GREP_INCLUDE[@]}" -- 'dangerouslySetInnerHTML|v-html|\.innerHTML[[:space:]]*\+?=[[:space:]]*[^"'"'"' [:space:];]|\.outerHTML[[:space:]]*=[[:space:]]*[^"'"'"' [:space:];]|(insertAdjacentHTML|document\.write(ln)?)\([^)]*(\+|location|hash|search|href|req|request|params|query|input|value|user|data|\$\{)' "$TARGET_PATH" 2>/dev/null \
     | grep -vE "$EXCLUDE" | grep -viE '\.(test|spec)\.|/__tests__/' \
     | while IFS= read -r hit; do
         local loc="${hit%%:*}"; local rest="${hit#*:}"; local ln="${rest%%:*}"; local content="${rest#*:}"
         echo "$content" | grep -qE '^[[:space:]]*(//|--|\*|#|/\*)' && continue
         finding MEDIUM XSS "$loc:$ln" "saída HTML dinâmica sem sanitização (XSS) — confirmar DOMPurify/escape"
+      done
+}
+
+deser_check() {
+  # desserialização insegura: pickle/marshal/yaml.load sem SafeLoader/unserialize
+  grep -rEn "${GREP_INCLUDE[@]}" -- 'pickle\.loads?\(|marshal\.loads|yaml\.load\(|[^_]unserialize\(|node-serialize' "$TARGET_PATH" 2>/dev/null \
+    | grep -vE "$EXCLUDE" | grep -viE '\.(test|spec)\.|/__tests__/' \
+    | while IFS= read -r hit; do
+        local loc="${hit%%:*}"; local rest="${hit#*:}"; local ln="${rest%%:*}"; local content="${rest#*:}"
+        echo "$content" | grep -qE '^[[:space:]]*(//|--|\*|#|/\*)' && continue
+        # yaml.load COM SafeLoader/safe_load é uso legítimo → pula
+        echo "$content" | grep -qiE 'yaml\.load\(' && echo "$content" | grep -qiE 'SafeLoader|safe_load' && continue
+        finding HIGH DESERIAL "$loc:$ln" "desserialização de dado não confiável (RCE) — use formato seguro (json/safe_load)"
       done
 }
 
@@ -144,7 +157,7 @@ white_box() {
     ( osv-scanner -r "$P" 2>/dev/null | grep -qiE "CVE-|GHSA-" && finding "HIGH" "VERSAO-CVE" "$P" "osv-scanner achou dependência com vulnerabilidade conhecida" )
 
   # --- 1. Segredos hardcoded (CRÍTICO) ---
-  scan_grep CRITICAL SECRETS 'sk_live_[A-Za-z0-9]{10,}|sk_test_[A-Za-z0-9]{10,}|AKIA[0-9A-Z]{16}|-----BEGIN (RSA|EC|OPENSSH|PRIVATE)' 'segredo hardcoded no código'
+  scan_grep CRITICAL SECRETS 'sk_live_[A-Za-z0-9]{10,}|sk_test_[A-Za-z0-9]{10,}|AKIA[0-9A-Z]{16}|-----BEGIN (RSA|EC|OPENSSH|PRIVATE)|gh[pousr]_[A-Za-z0-9]{30,}|xox[baprs]-[0-9A-Za-z]{8,}-[0-9A-Za-z-]{8,}|AIza[0-9A-Za-z_-]{35}|glpat-[0-9A-Za-z_-]{20}|npm_[A-Za-z0-9]{36}|sk-(ant-|proj-)?[A-Za-z0-9_-]{32,}' 'token/segredo de provedor hardcoded no código'
   scan_grep CRITICAL JWT-SECRET 'change-me|changeme|do-not-share|secret.{0,3}=.{0,3}["'"'"'](test|dev|123|password|secret)' 'segredo/JWT hardcoded fraco ou default'
   scan_grep CRITICAL SECRETS-PUBLIC '(NEXT_PUBLIC_|VITE_|REACT_APP_|EXPO_PUBLIC_)[A-Z_]*(SECRET|SERVICE_ROLE|PRIVATE|PASSWORD)' 'segredo com prefixo público (vaza no bundle do browser)'
   service_role_check
@@ -160,9 +173,16 @@ white_box() {
   xss_check
 
   # --- 8. Injeção SQL / comando / SSJI (eval) ---
-  scan_grep HIGH SQLI 'fmt\.Sprintf\([^)]*(SELECT|INSERT|UPDATE|DELETE)|query\(`[^`]*\$\{|execute\(f["'"'"'][^)]*(SELECT|INSERT)|cursor\.execute\([^,]*%|(SELECT|INSERT|UPDATE|DELETE|REPLACE)[^;]*\$[A-Za-z_]' 'SQL montado por concatenação/interpolação (use parametrizado)'
+  scan_grep HIGH SQLI 'fmt\.Sprintf\([^)]*(SELECT|INSERT|UPDATE|DELETE)|query\(`[^`]*\$\{|execute\(f["'"'"'][^)]*(SELECT|INSERT)|cursor\.execute\([^,]*%|(SELECT|INSERT|UPDATE|DELETE|REPLACE)[^;]*\$[A-Za-z_]|(SELECT |INSERT INTO|UPDATE |DELETE FROM)[^"'"'"'`;]*["'"'"'`][[:space:]]*\+[[:space:]]*[A-Za-z_$]' 'SQL montado por concatenação/interpolação (use parametrizado)'
   scan_grep HIGH CMDI 'os\.system\(|subprocess\.[a-z]+\([^)]*shell=True|child_process|exec\([^)]*(req|\$_|params)|shell_exec\(' 'possível command injection (input em shell/exec)'
   scan_grep CRITICAL SSJI 'eval\(|new Function\(|setTimeout\(["'"'"']|setInterval\(["'"'"']|vm\.runIn' 'eval/Function/vm com string = injeção de código no servidor (SSJI/RCE)'
+  deser_check
+
+  # --- 9. path traversal: leitura/envio de arquivo com input do usuário ---
+  scan_grep MEDIUM PATHTRAV '(readFile(Sync)?|createReadStream|sendFile|res\.download|open|fopen|file_get_contents)\([^)]*(req\.|request\.|params|query|\$_(GET|POST|REQUEST)|argv|\.body)' 'caminho de arquivo montado com input do usuário (path traversal) — normalizar e validar contra allowlist'
+
+  # --- 19. SSRF: requisição de saída com URL vinda do usuário ---
+  scan_grep MEDIUM SSRF '(fetch|axios(\.get|\.post)?|requests\.(get|post)|urllib\.request|http\.get|got|superagent)\([^)]*(req\.|request\.|params|query|\.body|\$_(GET|POST|REQUEST))' 'requisição de saída com URL controlada pelo usuário (SSRF) — validar host contra allowlist'
 
   # --- 6b. crypto fraco / uso incorreto ---
   scan_grep MEDIUM CRYPTO 'createCipheriv?\(|createHash\(["'"'"'](md5|sha1)|[^A-Za-z](MD5|SHA1)\(|des-ede3|des-cbc|RC4|Math\.random.*iv' 'crypto fraco/uso incorreto — algoritmo forte + IV/nonce aleatório por operação'
