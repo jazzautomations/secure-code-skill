@@ -9,12 +9,13 @@
 #   ./scan.sh --json [...]              saída JSON (findings[])
 #
 # Cada achado é PONTO DE PARTIDA, não veredito — leia o arquivo antes de agir (verify-before-flag).
-# Requer: bash, grep, curl, dig. Usa se presentes: gitleaks, osv-scanner, govulncheck, npm.
+# Requer: bash, grep, curl, dig. Usa se presentes: osv-scanner, govulncheck.
 set -uo pipefail
 
 TARGET_PATH=""
 URL=""
 JSON=0
+PATH_ERR=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -125,7 +126,7 @@ scan_grep() {
 ########################## WHITE-BOX ##########################
 white_box() {
   local P="$TARGET_PATH"
-  [ -d "$P" ] || { echo "path '$P' não existe" >&2; return; }
+  [ -d "$P" ] || { echo "path '$P' não existe" >&2; PATH_ERR=1; return; }
 
   # --- Passo 0: contexto/stack/versões ---
   echo "▸ Passo 0: stack & versões" >&2
@@ -246,14 +247,16 @@ while IFS=$'\t' read -r sev _ _ _; do [ -n "${sev:-}" ] && COUNT[$sev]=$(( ${COU
 
 if [ "$JSON" = "1" ]; then
   printf '{"findings":['
-  first=1
-  # ordena por severidade
+  # ordena por severidade e emite num ÚNICO processo awk (contador de vírgula
+  # precisa persistir entre linhas — subshell de pipe perderia o estado).
   for S in CRITICAL HIGH MEDIUM LOW INFO; do
-    grep -P "^$S\t" "$FINDINGS" 2>/dev/null | while IFS=$'\t' read -r sev vec loc msg; do
-      [ $first -eq 0 ] && printf ','; first=0
-      printf '{"severity":"%s","vector":"%s","location":"%s","message":"%s"}' "$sev" "$vec" "$loc" "$msg"
-    done
-  done
+    grep -P "^$S\t" "$FINDINGS" 2>/dev/null
+  done | awk -F'\t' '
+    NR>1 { printf "," }
+    {
+      for (i=1;i<=NF;i++) { gsub(/\\/,"\\\\",$i); gsub(/"/,"\\\"",$i) }
+      printf "{\"severity\":\"%s\",\"vector\":\"%s\",\"location\":\"%s\",\"message\":\"%s\"}",$1,$2,$3,$4
+    }'
   printf '],"summary":{"critical":%s,"high":%s,"medium":%s,"low":%s,"info":%s}}\n' \
     "${COUNT[CRITICAL]}" "${COUNT[HIGH]}" "${COUNT[MEDIUM]}" "${COUNT[LOW]}" "${COUNT[INFO]}"
 else
@@ -274,5 +277,6 @@ else
   echo "Cada achado é ponto de partida — confirme lendo o código/alvo (verify-before-flag)."
 fi
 
-# exit != 0 se houver crítico/alto (útil em CI)
+# exit: 2 = erro de uso (path inválido); 1 = achou crítico/alto; 0 = limpo. (útil em CI)
+[ "$PATH_ERR" = 1 ] && exit 2
 [ "${COUNT[CRITICAL]}" -gt 0 ] || [ "${COUNT[HIGH]}" -gt 0 ] && exit 1 || exit 0
