@@ -1,0 +1,16 @@
+flowchart TD
+ A["Contexto do projeto<br/>Stack, dados e limites de confiança"] --> B["Prevenir<br/>Regras para implementação"]
+ B --> C["Revisar o código<br/>Leitura e análise estática local"]
+ C --> D{"Há evidência<br/>no contexto?"}
+ D -->|Não| E["Descartar ou registrar incerteza"]
+ D -->|Sim| F["Priorizar<br/>Impacto, evidência e correção"]
+ F --> G{"Mudança exige<br/>decisão operacional?"}
+ G -->|Sim| H["Responsável aprova<br/>Plano e janela de mudança"]
+ G -->|Não| I["Corrigir no código"]
+ H --> I
+ I --> J["Revisar o diff e testar"]
+ J --> K["Registrar resultado<br/>e limitações"]
+ classDef base fill:#142521,stroke:#487569,color:#f1f7f3;
+ classDef accent fill:#d9fc91,stroke:#87a850,color:#122019;
+ class A,B,C,E,F,H,I,J,K base;
+ class D,G accent;

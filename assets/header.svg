@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-labelledby="title desc">
+<title id="title">Secure Code — segurança como parte do desenvolvimento</title>
+<desc id="desc">Regras, revisão de código e evidências para quem desenvolve com agentes de IA. Um projeto da Jazz Automations.</desc>
+<rect width="1280" height="360" rx="18" fill="#101619"/>
+<path d="M0 54H1280M0 306H1280" stroke="#26363b"/>
+<rect x="56" y="90" width="4" height="164" fill="#d2eaa1"/>
+<g font-family="DejaVu Sans,Arial,sans-serif">
+<text x="84" y="112" font-size="17" letter-spacing="3" fill="#d2eaa1">JAZZ AUTOMATIONS / OPEN SOURCE</text>
+<text x="80" y="181" font-size="65" font-weight="700" letter-spacing="-2" fill="#f5f6ef">Secure Code</text>
+<text x="84" y="229" font-size="27" fill="#c1cbd0">Segurança como parte do desenvolvimento.</text>
+<text x="84" y="271" font-size="17" fill="#91a3aa">PREVENIR · REVISAR · CORRIGIR COM EVIDÊNCIAS</text>
+</g>
+<g fill="none" stroke="#d2eaa1" stroke-width="3" stroke-linejoin="round">
+<path d="M1070 97l72 26v62c0 45-31 76-72 94-41-18-72-49-72-94v-62z"/>
+<path d="M1039 186l21 22 44-47"/>
+</g>
+</svg>

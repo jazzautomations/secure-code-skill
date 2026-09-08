@@ -1,0 +1,13 @@
+flowchart LR
+ A["Projeto local<br/>Código e configurações"] --> B["Revisão de segurança"]
+ C["Skill<br/>Regras de prevenção"] --> B
+ D["Referências<br/>Vetores e playbook"] --> B
+ E["Scanner local<br/>Indícios por arquivo e linha"] --> B
+ B --> F["Relatório<br/>Evidência, impacto e recomendação"]
+ F --> G["Responsável pelo projeto<br/>Decisão e revisão das mudanças"]
+ H["Fixtures de teste"] --> I["Suíte de regressão"]
+ I --> J["Validação dos detectores<br/>e casos limpos da suíte"]
+ classDef base fill:#142521,stroke:#487569,color:#f1f7f3;
+ classDef accent fill:#d9fc91,stroke:#87a850,color:#122019;
+ class A,C,D,E,F,G,H,I,J base;
+ class B accent;

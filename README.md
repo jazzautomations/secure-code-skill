@@ -1,208 +1,139 @@
-# 🔐 secure-code — Skill de segurança para agentes de IA (vibe coding)
+<img src="assets/header.svg" alt="Secure Code — segurança como parte do desenvolvimento. Jazz Automations." width="100%" />
 
-Uma **Skill do Claude Code** (e um conjunto de regras portável para Cursor, Copilot, Lovable, etc.)
-que impede agentes de IA de gerarem código inseguro — e os ensina a **detectar e corrigir** essas
-falhas em projetos já existentes.
+<p align="center">
+  <a href="LICENSE"><img alt="Licença MIT" src="https://img.shields.io/badge/licen%C3%A7a-MIT-d2eaa1?style=flat-square&amp;labelColor=142521" /></a>
+  <img alt="Foco: revisão de código" src="https://img.shields.io/badge/foco-revis%C3%A3o_de_c%C3%B3digo-d2eaa1?style=flat-square&amp;labelColor=142521" />
+  <img alt="Bash e Markdown" src="https://img.shields.io/badge/Bash_%2B_Markdown-142521?style=flat-square" />
+</p>
 
-Feita para **vibe coders**: quem constrói apps rápido com IA e não quer vazar os dados dos usuários
-(nem a fatura da conta de nuvem).
+**Regras e ferramentas para apoiar a segurança de aplicações desenvolvidas com agentes de IA.** O Secure Code combina orientações de implementação, análise estática local e revisão contextual para transformar indícios em recomendações de correção.
 
-> ⚠️ **Copiloto de segurança de primeira linha — NÃO substitui um pentest profissional.** Reduz e
-> pega os erros mais comuns (com número medido, veja [`BENCHMARK.md`](BENCHMARK.md)); não é carimbo
-> de "seguro". Para app com dinheiro/saúde de muita gente em escala: use isto **e** contrate um profissional.
+Para desenvolvedores e equipes que usam IA no dia a dia e querem tratar autenticação, dados, integrações e dependências com mais cuidado.
 
-> **Regra de ouro:** nunca confie no cliente, nunca confie no default do framework, todo segredo
-> fica no servidor.
+[Como funciona](#como-funciona) · [Componentes](#componentes) · [Começar](#começar) · [Cobertura](#cobertura) · [Validação](#validação-e-limites) · [Contribuir](CONTRIBUTING.md)
 
----
+## Como funciona
 
-## Por que isso existe
+| Etapa | O que acontece | Entrega |
+| :--- | :--- | :--- |
+| **Prevenir** | Entender a stack e aplicar regras durante a implementação. | Decisões explícitas sobre dados, permissões e limites de confiança. |
+| **Revisar** | Ler o código, analisar indícios e conferir o contexto. | Achados com evidência e incertezas identificadas. |
+| **Corrigir** | Priorizar mudanças, revisar o diff e verificar o resultado. | Correções no código e decisões operacionais encaminhadas ao responsável. |
 
-A IA otimiza o código para "funcionar", não para "ser seguro". O resultado aparece nos números
-que a imprensa de segurança vem reportando sobre apps gerados por IA / vibe-coded:
+O scanner aponta padrões. A leitura do código determina se o indício se sustenta. Ausência de achados não comprova ausência de falhas.
 
-- Grande parte do código gerado por IA falha em testes de segurança básicos (XSS, SQLi, secrets).
-  *(OX Security, Cloud Security Alliance)*
-- Auditorias em milhares de apps vibe-coded encontraram **milhares de vulnerabilidades críticas**,
-  **centenas de segredos expostos** (API keys, tokens) e **PII vazada**. *(Escape.tech)*
-- Uma fração enorme dos apps Supabase gerados por IA subiu com **Row Level Security desligada** —
-  ou seja, qualquer pessoa com a chave pública (que fica no front) lê o banco inteiro. *(byteiota, Precursor Security)*
-- Apps que embutiram **service keys / API keys direto no JavaScript do cliente**, dando acesso
-  total ao banco de produção. *(Wiz, relatos públicos de incidentes)*
-- **Denial of Wallet**: chaves de LLM roubadas gerando dezenas de milhares de dólares em horas.
-  *(ToxSec, LayerX)*
-- **Slopsquatting**: a IA "alucina" nomes de pacotes que não existem; atacantes registram esses
-  nomes com malware. *(Cloud Security Alliance)*
+<p align="center">
+  <img src="docs/diagrams/review-flow.png" alt="Fluxograma: contexto, prevenção, revisão local, verificação da evidência, priorização, decisão operacional, correção e testes." width="570" />
+</p>
 
-> As estatísticas acima são reportadas pelas fontes citadas — trate-as como ordem de grandeza, não
-> como número absoluto. O que **não** muda é o padrão: código de IA precisa ser revisado como
-> código de terceiro não-confiável. Fontes completas no fim deste README.
+[Editar no draw.io](docs/diagrams/review-flow.drawio) · [Ver SVG](docs/diagrams/review-flow.svg) · [Fonte do diagrama](docs/diagrams/review-flow.mmd)
 
----
+## Componentes
 
-## O que a skill cobre (33 vetores)
+As instruções orientam o agente; o scanner auxilia a leitura; o relatório organiza a decisão. A suíte de testes verifica os detectores com exemplos controlados.
 
-> Sempre começa por **contexto + stack + versões** (deps desatualizadas, versões com CVE conhecida,
-> runtime EOL) antes de aplicar qualquer regra — regra na stack errada é ruído.
+![Diagrama dos componentes: projeto local, skill, referências e scanner apoiam a revisão; o relatório informa o responsável. Fixtures alimentam a suíte de regressão.](docs/diagrams/architecture.png)
 
-Segredos expostos · RLS ausente/quebrada (Supabase) · IDOR/BOLA · confiar no cliente (preço/role) ·
-webhook sem verificação · token em localStorage · XSS · SQL/command injection · headers de
-segurança · CORS · rate limit / denial of wallet · upload inseguro / SSRF · **supply chain**
-(slopsquatting, deps vulneráveis, **CI/CD sem pin de SHA**, Docker sem digest, script de terceiro
-sem SRI, dependency confusion) · auth e reset de senha fracos · erros verbosos & logs com PII ·
-prompt injection · **subdomain takeover** · **JWT alg confusion / none / secret fraco** · **race
-condition / TOCTOU** · `.git`/`.env`/source maps/Swagger expostos · open redirect / OAuth · path
-traversal / SSTI · GraphQL · **SPF/DKIM/DMARC** · sessão insegura · object storage público ·
-logging & monitoramento · validação server-side · **cache poisoning (CDN/edge)** · **excessive data
-exposure / over-fetching** · **WebSocket inseguro** · **PII → LLM de terceiro** · **query sem limite
-(data dump/DoS)** · **versões vulneráveis / runtime EOL**.
+[Editar no draw.io](docs/diagrams/architecture.drawio) · [Ver SVG](docs/diagrams/architecture.svg) · [Fonte do diagrama](docs/diagrams/architecture.mmd)
 
-**Multi-linguagem:** os detectores (grep por vetor) cobrem **JS/TS, Go, Python e PHP** — o toolkit
-white-box traz o padrão equivalente em cada stack.
+| Componente | Papel |
+| :--- | :--- |
+| [`secure-code/SKILL.md`](secure-code/SKILL.md) | Instruções de prevenção, revisão e correção para o agente. |
+| [`scan.sh`](scan.sh) | Scanner com heurísticas de análise estática e saída textual ou JSON. |
+| [`references/`](secure-code/references/) | Catálogo de vetores, playbook de revisão e modelo de relatório. |
+| [`tests/`](tests/) | Fixtures controladas e suíte de regressão dos detectores. |
+| [`ci/scan.yml`](ci/scan.yml) | Exemplo de workflow; precisa ser instalado no projeto. |
 
-Cada vetor tem o padrão **❌ errado → ✅ certo** em [`secure-code/references/vectors.md`](secure-code/references/vectors.md).
+Os diagramas apresentam o fluxo de **revisão do código local**. O repositório também contém verificações remotas; elas não fazem parte deste guia de início rápido.
 
----
+## Começar
 
-## 🚀 Scanner rodável (não é só doc — é ferramenta)
+### 1. Conheça as regras
 
-Além da skill (que o agente lê), tem um **scanner** que roda os detectores sozinho:
+Leia a [skill](secure-code/SKILL.md) e o [playbook de revisão](secure-code/references/code-review-playbook.md). Comece pelo contexto da aplicação: dados tratados, autenticação, integrações e versões utilizadas.
+
+### 2. Use a skill no Claude Code
+
+Clone o repositório e copie a pasta da skill para o diretório pessoal de skills:
 
 ```bash
-bash scan.sh .                      # white-box: varre o repositório atual
-bash scan.sh --url https://alvo     # black-box: headers, CORS, .git/.env, SPF/DMARC, Supabase
-bash scan.sh --url URL .            # grey-box (os dois)
-bash scan.sh --json .               # saída JSON pra CI/pipeline
-# ou: make test   |   make scan   |   make scan URL=https://exemplo.com
-```
-
-Saída ordenada por severidade (🔴 crítico → ℹ️ info), com `arquivo:linha`. Exit code pronto pra CI:
-`0` = limpo, `1` = achou crítico/alto, `2` = erro de uso (path inválido — não passa como "limpo").
-**Cada achado é ponto de partida, não veredito** — o scanner aponta, você confirma lendo
-(verify-before-flag). Requer `bash`, `grep`, `curl`, `dig`; usa `osv-scanner` e `govulncheck` se
-estiverem instalados.
-
-### Provado por testes
-`tests/` tem código **vulnerável de propósito** (um por vetor) e código **limpo**. `make test`
-verifica que cada detector dispara **e** que o código limpo não gera falso-positivo (inclusive o
-caso clássico: `NEXT_PUBLIC_SUPABASE_ANON_KEY` no front **não** é bug se a RLS está ligada). O CI
-(`ci/scan.yml` → copie para `.github/workflows/`) roda isso em todo push — com a Action **pinada
-por SHA** (praticando o vetor 13 da própria skill).
-
-### Como agente do Claude Code
-`agents/security-reviewer.md` é um subagente pronto: copie para `~/.claude/agents/` e peça
-*"revisa a segurança deste projeto"*. Ele roda o scanner, aplica verify-before-flag e entrega o
-relatório priorizado.
-
-## Como funciona — 3 modos
-
-A skill dá ao agente um comportamento em 3 modos (detalhe em [`secure-code/SKILL.md`](secure-code/SKILL.md)):
-
-1. **PREVENIR** — 16 regras invioláveis que o agente aplica *antes de entregar* qualquer código
-   que toque em auth, dados, pagamentos, uploads, env vars, DNS ou chamadas externas.
-2. **DETECTAR** — fluxo `DETECTAR → VERIFICAR → REPORTAR` em dois tracks: **white-box** (você tem
-   o código — track principal, com grep por vetor + [playbook de revisão](secure-code/references/code-review-playbook.md))
-   e **black-box** (alvo no ar — headers, RLS probe, subdomínios, SPF/DMARC). Com
-   **verify-before-flag** (o agente *testa* a falha antes de acusar, reduzindo falso-positivo),
-   escala de severidade e [template de relatório](secure-code/references/audit-report-template.md).
-3. **CORRIGIR** — separa o que a IA pode consertar sozinha do que ela **tem que parar e escalar
-   para um humano** (rotacionar chave, mexer em RLS de produção, deletar DNS, reescrever histórico
-   do git) — evitando que a "correção" quebre a produção.
-
-Inclui uma **lista de falso-positivos** (ex: `NEXT_PUBLIC_SUPABASE_ANON_KEY` no front é *correto*
-se a RLS estiver ligada) para o agente não marcar coisa certa como bug.
-
----
-
-## Instalação
-
-### Claude Code (skill nativa)
-
-```bash
-git clone https://github.com/SEU-USUARIO/secure-code-skill.git
+git clone https://github.com/jazzautomations/secure-code-skill.git
 mkdir -p ~/.claude/skills
-cp -r secure-code-skill/secure-code ~/.claude/skills/secure-code
+cp -R secure-code-skill/secure-code ~/.claude/skills/
 ```
 
-Pronto. A skill é descoberta no próximo boot do Claude Code. Ela ativa sozinha quando você escreve
-ou audita código sensível, ou invoque na mão com `/secure-code`.
+Se já existir uma instalação, revise as alterações antes de substituir seus arquivos. Para compartilhar a skill com uma equipe, utilize `.claude/skills/secure-code/` dentro do projeto. Consulte a [documentação do Claude Code](https://code.claude.com/docs/en/skills) para os locais e mecanismos de descoberta suportados.
 
-> Para o projeto inteiro (compartilhando com o time), copie para `.claude/skills/secure-code/`
-> dentro do repositório em vez de `~/.claude/`.
+Um pedido de revisão pode ser simples:
 
-### Cursor / Copilot / Lovable / outros agentes
+> Revise o código deste projeto com a skill secure-code. Comece pela stack e pelos dados tratados, confira os indícios no contexto e entregue recomendações com evidência, impacto e limitações.
 
-Esses não usam skills do Claude Code. Copie o bloco **MODO 1** de
-[`secure-code/SKILL.md`](secure-code/SKILL.md) para o `.cursorrules`, as *custom instructions* ou o
-`CLAUDE.md` do seu projeto. O detalhe de cada vetor fica em
-[`secure-code/references/vectors.md`](secure-code/references/vectors.md).
+Em outros assistentes, as regras podem servir como material de referência; o mecanismo de instalação depende da ferramenta.
 
----
+### 3. Confira a suíte local
 
-## Uso
-
-- **Escrevendo código:** a skill guia o agente a gerar código seguro por padrão.
-- **Auditando:** peça *"audite a segurança deste projeto usando a skill secure-code"*. O agente roda
-  o toolkit (grep de segredos, probe de RLS, checagem de headers/CORS, subdomain takeover, SPF/DMARC),
-  verifica cada achado e entrega um relatório priorizado por severidade.
-- **Corrigindo:** peça a correção; o agente aplica o que é seguro e sinaliza o que precisa da sua mão.
-
----
-
-## Estrutura
-
-```
-├── scan.sh                           # 🚀 scanner rodável (white-box + black-box)
-├── Makefile                          # make test / make scan
-├── tests/                            # suíte que PROVA que os detectores disparam
-│   ├── run.sh
-│   └── fixtures/{vulnerable,clean}/  # código vulnerável de propósito + código limpo
-├── agents/
-│   └── security-reviewer.md          # subagente do Claude Code que usa a skill
-├── ci/scan.yml                       # CI (copie p/ .github/workflows/): testes + self-scan, action pinada por SHA
-└── secure-code/                      # a SKILL
-    ├── SKILL.md                      # o cérebro: 3 modos + regras + falso-positivos
-    └── references/
-        ├── vectors.md                # 33 vetores: ❌ errado → ✅ certo + toolkit white-box E black-box
-        ├── code-review-playbook.md   # metodologia de revisão de código, passo a passo
-        └── audit-report-template.md  # formato do relatório de auditoria
+```bash
+cd secure-code-skill
+make test
 ```
 
-> **White-box e black-box.** A skill foi feita para os dois cenários: revisar/construir o **próprio
-> código** (você tem o repo → grep por vetor + playbook de revisão) e auditar um **alvo no ar**
-> (sem código → probing externo). O ideal é combinar: o código diz *onde* olhar, o alvo vivo *confirma*.
+Para análise estática, o scanner usa **Bash 4+ e GNU grep**, incluindo suporte a `grep -P`. O Bash 3.2 fornecido em instalações antigas do macOS não é suficiente. Integrações opcionais de dependências usam `osv-scanner` e `govulncheck` quando presentes.
 
----
+## Cobertura
 
-## Contribuindo
+A documentação aborda 33 vetores. Isso não significa 33 detecções automáticas: parte da avaliação depende da leitura das regras de negócio e das configurações.
 
-Achou um vetor comum que falta? Um exemplo `errado → certo` melhor? Abra uma issue ou um PR.
-Veja [`CONTRIBUTING.md`](CONTRIBUTING.md). Quanto mais gente revisar, mais forte fica.
+| Área | Exemplos de revisão |
+| :--- | :--- |
+| Identidade e acesso | Autorização por recurso, sessões, JWT e políticas de acesso aos dados. |
+| Dados e segredos | Credenciais, exposição de informações, logs, armazenamento e envio de dados a modelos. |
+| Entradas e saídas | Validação no servidor, consultas parametrizadas, renderização de conteúdo e uploads. |
+| Integrações | Webhooks, limites de uso, chamadas externas e tratamento de falhas. |
+| Dependências e operação | Versões, cadeia de fornecimento, configuração de CI/CD e observabilidade. |
+| Regras de negócio | Concorrência, limites, transições de estado e decisões que exigem contexto. |
 
-## Aviso
+Há exemplos e heurísticas para JavaScript/TypeScript, Python, Go e PHP. A cobertura varia por linguagem e por vetor; não é uma análise semântica completa dessas stacks.
 
-Isto é uma camada de defesa, não uma garantia. Nenhum documento transforma um agente em pentester
-perfeito — achados **críticos** merecem conferência humana antes de agir. Use como guardrail, não
-como carimbo de "está seguro".
+## Validação e limites
 
-## Licença
+**Suíte local executada em 8 de setembro de 2026: 21 verificações passaram, nenhuma falhou.** São 20 verificações de categorias de detecção e uma verificação agregada que exige ausência de achados críticos ou altos nas fixtures limpas.
 
-[MIT](LICENSE) — use, copie, adapte, inclusive comercialmente. Só mantenha o aviso de licença.
+Esse resultado comprova o comportamento nos exemplos da suíte. Não mede a precisão em qualquer aplicação nem garante ausência de falsos positivos fora dela.
 
----
+- Heurísticas de texto não compreendem toda a execução, o fluxo de dados ou as regras de negócio.
+- Um padrão encontrado pode estar mitigado, ser código de teste ou depender de contexto ausente.
+- Mudanças de credenciais, permissões e produção precisam de avaliação do responsável pela operação.
+- O [registro de benchmarks](BENCHMARK.md) documenta experiências anteriores do projeto. Esses resultados externos não foram repetidos nesta revisão da documentação.
 
-## Fontes
+O exemplo de CI em `ci/scan.yml` executa a suíte e um relatório do próprio repositório. A etapa de relatório contém `|| true`: **ela não bloqueia o build por achados**. Não há workflow ativo apenas por esse arquivo existir na pasta `ci/`.
 
-- OX Security — *Vibe Coding Security*: https://www.ox.security/blog/vibe-coding-security/
-- Cloud Security Alliance — *AI-Generated Code Vulnerability Surge*: https://labs.cloudsecurityalliance.org/research/csa-research-note-ai-generated-code-vulnerability-surge-2026/
-- Cloud Security Alliance — *Slopsquatting*: https://labs.cloudsecurityalliance.org/research/csa-research-note-slopsquatting-ai-supply-chain-20260419-csa/
-- SecurityWeek — *Vibe-Coded Apps Riddled With Flaws*: https://www.securityweek.com/vibe-coded-apps-riddled-with-exploitable-security-flaws/
-- byteiota — *Supabase apps exposed by missing RLS*: https://byteiota.com/supabase-security-flaw-170-apps-exposed-by-missing-rls/
-- Precursor Security — *Testing Supabase RLS*: https://www.precursorsecurity.com/blog/row-level-recklessness-testing-supabase-security
-- ToxSec — *Denial of Wallet*: https://www.toxsec.com/p/denial-of-wallet
-- LayerX — *Denial of Wallet attacks*: https://layerxsecurity.com/generative-ai/denial-of-wallet-attacks/
-- OWASP — *Cheat Sheet Series* (REST, JWT, GraphQL, Session): https://cheatsheetseries.owasp.org/
-- OWASP — *Top 10 for LLM Applications*: https://genai.owasp.org/
-- HackerOne — *Securely signing webhooks*: https://www.hackerone.com/blog/securely-signing-webhooks-best-practices-your-application
-- Censys — *Dangling DNS / subdomain takeover*: https://censys.com/blog/dangling-dns-subdomain-takeover/
-- DMARCLY — *Implementar SPF/DKIM/DMARC*: https://dmarcly.com/blog/how-to-implement-dmarc-dkim-spf-to-stop-email-spoofing-phishing-the-definitive-guide
+## Navegue pelo projeto
+
+```text
+secure-code-skill/
+├── README.md
+├── assets/                    # Identidade visual
+├── docs/diagrams/             # Draw.io editável, fontes e imagens
+├── secure-code/
+│   ├── SKILL.md               # Instruções para o agente
+│   └── references/            # Vetores, playbook e relatório
+├── scan.sh                    # Scanner
+├── tests/                     # Fixtures e suíte local
+├── ci/scan.yml                # Exemplo de integração contínua
+├── BENCHMARK.md               # Registro de avaliações anteriores
+└── CONTRIBUTING.md
+```
+
+## Contribuir
+
+Sugestões de clareza, correções, casos de falso positivo e melhorias nos testes são bem-vindos. Explique o comportamento esperado e use exemplos mínimos, sem credenciais ou dados de pessoas. Veja o [guia de contribuição](CONTRIBUTING.md).
+
+Os diagramas foram criados com o **MCP do draw.io** e exportados com o renderizador do serviço. Os arquivos `.drawio` podem ser abertos no editor para alterar textos, formas e conexões. As fontes `.mmd` também estão versionadas.
+
+## Quem constrói
+
+Um projeto de **[Felipe Salvego / Jazz Automations](https://github.com/jazzautomations)**: desenvolvimento de software, integrações e sistemas de IA.
+
+[Conheça a Jazz](https://jazzautomations.com.br) · [Converse no LinkedIn](https://www.linkedin.com/in/felipesalvego/)
+
+[Licença MIT](LICENSE) — uso, adaptação e distribuição conforme os termos da licença.
